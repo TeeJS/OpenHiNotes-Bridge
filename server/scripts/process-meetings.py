@@ -78,6 +78,50 @@ def parse_recording_filename(stem: str):
     return year, month_num
 
 
+def wav_suffix_after_prefix(stem: str) -> str:
+    """Return the part of a WAV stem after the ``YYYYMonDD-HHMMSS-`` prefix.
+
+    e.g. ``2026Jun20-122844-Rec00`` -> ``Rec00``. Returns ``''`` if the stem
+    is exactly the prefix or doesn't match. Used to keep ``-RecNN`` style
+    disambiguators when renaming a WAV to match its companion JSON's stem.
+    """
+    if len(stem) >= 17 and stem[16] == '-':
+        return stem[17:]
+    return ''
+
+
+def rename_wav_to_match_json(wav_path: Path, json_path: Path) -> Path:
+    """Rename WAV in place so its stem matches the JSON's, return new path.
+
+    If the WAV stem was ``2026Jun20-122844-Rec00`` and JSON stem is
+    ``2026Jun20-123000-discuss the script``, the WAV becomes
+    ``2026Jun20-123000-discuss the script-Rec00.wav``. With no suffix on the
+    WAV (just date+time), the result drops the trailing hyphen and matches
+    the JSON stem exactly. Collisions get a numeric ``-2``, ``-3``, … suffix
+    so two WAVs sharing one JSON never overwrite each other.
+    """
+    if wav_path.stem == json_path.stem:
+        return wav_path
+
+    suffix = wav_suffix_after_prefix(wav_path.stem)
+    base = f"{json_path.stem}-{suffix}" if suffix else json_path.stem
+    new_path = wav_path.with_name(f"{base}{wav_path.suffix}")
+
+    if new_path.exists() and new_path.resolve() != wav_path.resolve():
+        for n in range(2, 100):
+            candidate = wav_path.with_name(f"{base}-{n}{wav_path.suffix}")
+            if not candidate.exists():
+                new_path = candidate
+                break
+        else:
+            log(f"  WARNING: could not find a free rename target for {wav_path.name}; skipping rename")
+            return wav_path
+
+    wav_path.rename(new_path)
+    log(f"  Renamed WAV to match JSON stem: {new_path.name}")
+    return new_path
+
+
 def find_json_for_wav(wav_path: Path):
     """Pair a WAV to its Outlook metadata JSON by date (+ time if both have it).
 
@@ -415,6 +459,11 @@ def run_batch(wav_files, input_dir, output_dir, threshold, url) -> None:
         archive_json = json_path is not None and json_path not in seen_jsons
         if json_path is not None:
             seen_jsons.add(json_path)
+            # Rename the WAV in /data so all downstream artifacts
+            # (details/ copies, -diarizer-response.json, archive) share a
+            # stem with the meeting JSON. Lets tools that pair by exact
+            # stem match upstream/downstream of this script.
+            wav = rename_wav_to_match_json(wav, json_path)
         process_file(wav, json_path, input_dir, output_dir, threshold, url,
                      archive_json=archive_json)
 
