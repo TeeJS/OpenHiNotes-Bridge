@@ -240,6 +240,69 @@ export default function App() {
   const [playingServerFile, setPlayingServerFile] = useState<string | null>(null);
   const [confirmDeleteServerFile, setConfirmDeleteServerFile] = useState<string | null>(null);
   const [deletingServerFile, setDeletingServerFile] = useState<string | null>(null);
+  const [selectedServerFiles, setSelectedServerFiles] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState<boolean>(false);
+  const [bulkServerBusy, setBulkServerBusy] = useState<boolean>(false);
+
+  const toggleSelectedServerFile = useCallback((name: string) => {
+    setSelectedServerFiles((s) => {
+      const next = new Set(s);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAllServerFiles = useCallback(() => {
+    setSelectedServerFiles((s) => {
+      if (s.size === serverFiles.length) return new Set();
+      return new Set(serverFiles.map((f) => f.name));
+    });
+  }, [serverFiles]);
+
+  // Prune any stale selections after a refresh (file no longer exists)
+  useEffect(() => {
+    setSelectedServerFiles((s) => {
+      const present = new Set(serverFiles.map((f) => f.name));
+      const next = new Set<string>();
+      for (const n of s) if (present.has(n)) next.add(n);
+      return next.size === s.size ? s : next;
+    });
+  }, [serverFiles]);
+
+  const handleDownloadSelectedServerFiles = useCallback(() => {
+    // Trigger one anchor click per file, slightly spaced. Browsers throttle
+    // simultaneous downloads from the same origin — staggering avoids the
+    // "only the first download arrives" failure mode some browsers exhibit.
+    const names = Array.from(selectedServerFiles);
+    names.forEach((name, i) => {
+      setTimeout(() => {
+        const a = document.createElement('a');
+        a.href = `/api/files/${encodeURIComponent(name)}?download=1`;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }, i * 250);
+    });
+  }, [selectedServerFiles]);
+
+  const handleDeleteSelectedServerFiles = useCallback(async () => {
+    setBulkServerBusy(true);
+    const names = Array.from(selectedServerFiles);
+    for (const name of names) {
+      // eslint-disable-next-line no-await-in-loop
+      const r = await fetch(`/api/files/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      if (!r.ok && r.status !== 404) {
+        // eslint-disable-next-line no-console
+        console.error('bulk delete failed for', name, await r.text());
+      }
+      if (playingServerFile === name) setPlayingServerFile(null);
+    }
+    setBulkServerBusy(false);
+    setConfirmBulkDelete(false);
+    setSelectedServerFiles(new Set());
+    await refreshServerFiles();
+  }, [selectedServerFiles, playingServerFile, refreshServerFiles]);
 
   const isPlayableAudio = useCallback((name: string): boolean => {
     const ext = name.toLowerCase().slice(name.lastIndexOf('.'));
@@ -712,7 +775,38 @@ export default function App() {
           <strong>Files on server</strong>
           <span className="muted">{serverConfig?.storage}</span>
           <div className="spacer" />
-          <button className="secondary" onClick={refreshServerFiles}>Refresh</button>
+          {selectedServerFiles.size > 0 && (
+            <span className="label-dim">{selectedServerFiles.size} selected</span>
+          )}
+          <button
+            className="secondary"
+            onClick={handleDownloadSelectedServerFiles}
+            disabled={selectedServerFiles.size === 0 || bulkServerBusy}
+            title="Download every selected file as a separate save dialog"
+          >
+            Download selected
+          </button>
+          {confirmBulkDelete ? (
+            <>
+              <button
+                className="danger"
+                onClick={handleDeleteSelectedServerFiles}
+                disabled={bulkServerBusy}
+              >
+                {bulkServerBusy ? 'Deleting…' : `Confirm delete ${selectedServerFiles.size}`}
+              </button>
+              <button className="ghost" onClick={() => setConfirmBulkDelete(false)}>Cancel</button>
+            </>
+          ) : (
+            <button
+              className="secondary"
+              onClick={() => setConfirmBulkDelete(true)}
+              disabled={selectedServerFiles.size === 0 || bulkServerBusy}
+            >
+              Delete selected
+            </button>
+          )}
+          <button className="secondary" onClick={refreshServerFiles} disabled={bulkServerBusy}>Refresh</button>
         </div>
         {serverFiles.length === 0 ? (
           <div className="muted" style={{ marginTop: 10 }}>No files yet.</div>
@@ -721,6 +815,14 @@ export default function App() {
             <table className="recordings">
               <thead>
                 <tr>
+                  <th style={{ width: 28 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedServerFiles.size === serverFiles.length && serverFiles.length > 0}
+                      ref={(el) => { if (el) el.indeterminate = selectedServerFiles.size > 0 && selectedServerFiles.size < serverFiles.length; }}
+                      onChange={toggleSelectAllServerFiles}
+                    />
+                  </th>
                   <th>Filename</th>
                   <th>Modified</th>
                   <th className="right">Size</th>
@@ -734,6 +836,13 @@ export default function App() {
                   const isPlaying = playingServerFile === f.name;
                   return (
                     <tr key={f.name}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedServerFiles.has(f.name)}
+                          onChange={() => toggleSelectedServerFile(f.name)}
+                        />
+                      </td>
                       <td className="filename mono">
                         {f.name}
                         {isPlaying && (
