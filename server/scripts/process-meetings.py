@@ -32,6 +32,7 @@ DEFAULT_READY_TIMEOUT = int(os.environ.get("DIARIZER_READY_TIMEOUT", "300"))
 DEFAULT_SKIP_POWER = os.environ.get("DIARIZER_SKIP_POWER_MGMT", "").lower() in ("1", "true", "yes")
 
 TIMEOUT = 3600
+JSON_TIME_TOLERANCE_SECONDS = 7 * 60
 
 MONTH_ABBR = {
     "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04",
@@ -44,35 +45,80 @@ def log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
-def parse_recording_filename(stem: str):
-    """Match the YYYYMonDD-HHMMSS prefix and return (year, month_num).
+def parse_date_time(stem: str):
+    """Extract (date_iso, seconds_since_midnight_or_None) from a filename stem.
 
-    Anything after the 16-char prefix is ignored, so files renamed with a
-    trailing suffix (e.g. ``2026Jun12-160000-MeetingName``) still route
-    correctly. Returns None if the prefix doesn't match — the caller logs and
-    skips, preserving the original "fail loud, don't silently misroute" rule.
+    Accepts ``YYYYMonDD`` followed by anything, or ``YYYYMonDD-HHMMSS`` plus
+    anything. The trailing part of the stem (HiDock's ``-Rec00``, Outlook's
+    meeting subject, etc.) is ignored — the goal is just to recover the date
+    and an optional time for fuzzy pairing. Returns None if the date prefix
+    doesn't parse.
     """
-    if len(stem) < 16:
+    if len(stem) < 9:
         return None
-    year, mon_abbr, day, sep, time_part = stem[:4], stem[4:7], stem[7:9], stem[9], stem[10:16]
-    if not year.isdigit() or not day.isdigit() or not time_part.isdigit():
+    year, mon_abbr, day = stem[:4], stem[4:7], stem[7:9]
+    if not year.isdigit() or not day.isdigit() or mon_abbr not in MONTH_ABBR:
         return None
-    if sep != "-" or mon_abbr not in MONTH_ABBR:
+    date_iso = f"{year}-{MONTH_ABBR[mon_abbr]}-{day}"
+
+    time_seconds = None
+    if len(stem) >= 16 and stem[9] == "-" and stem[10:16].isdigit():
+        hh, mm, ss = int(stem[10:12]), int(stem[12:14]), int(stem[14:16])
+        if 0 <= hh < 24 and 0 <= mm < 60 and 0 <= ss < 60:
+            time_seconds = hh * 3600 + mm * 60 + ss
+    return date_iso, time_seconds
+
+
+def parse_recording_filename(stem: str):
+    """For WAV routing: returns (year, month_num) or None."""
+    parsed = parse_date_time(stem)
+    if parsed is None:
         return None
-    return year, MONTH_ABBR[mon_abbr]
+    year, month_num, _ = parsed[0].split("-")
+    return year, month_num
 
 
 def find_json_for_wav(wav_path: Path):
-    wav_stem = wav_path.stem
+    """Pair a WAV to its Outlook metadata JSON by date (+ time if both have it).
+
+    HiDock WAVs are named ``YYYYMonDD-HHMMSS-Rec00.wav``; Outlook metadata
+    JSONs are named ``YYYYMonDD-<subject>.json`` (or sometimes with a time
+    too). The match rule is: same date, and — if both files carry a time —
+    within ±7 minutes. Everything after the date/time prefix is ignored.
+
+    If multiple JSONs match, prefer the one with a time over a date-only
+    match, then the smallest time delta, then alphabetical (stable).
+    """
+    wav_parsed = parse_date_time(wav_path.stem)
+    if wav_parsed is None:
+        return None
+    wav_date, wav_time = wav_parsed
+
+    candidates = []
     for candidate in wav_path.parent.iterdir():
-        if candidate.is_file() and candidate.suffix.lower() == ".json":
-            json_stem = candidate.stem
-            if json_stem == wav_stem:
-                return candidate
-            json_stem_replaced = json_stem.replace(' - ', '_-_').replace(' -_', '_').replace(' ', '_')
-            if json_stem_replaced == wav_stem:
-                return candidate
-    return None
+        if not candidate.is_file() or candidate.suffix.lower() != ".json":
+            continue
+        j_parsed = parse_date_time(candidate.stem)
+        if j_parsed is None:
+            continue
+        j_date, j_time = j_parsed
+        if j_date != wav_date:
+            continue
+        if wav_time is not None and j_time is not None:
+            diff = abs(wav_time - j_time)
+            if diff > JSON_TIME_TOLERANCE_SECONDS:
+                continue
+            has_time = True
+        else:
+            diff = 0
+            has_time = False
+        # Sort key: (date-only is worse than timed match, then smaller diff, then name)
+        candidates.append(((0 if has_time else 1), diff, candidate.name, candidate))
+
+    if not candidates:
+        return None
+    candidates.sort()
+    return candidates[0][3]
 
 
 def build_attendees(metadata: dict) -> list:
@@ -206,7 +252,7 @@ def has_transcript_text(segments: list) -> bool:
 
 
 def process_file(wav_path: Path, json_path, input_dir: Path, output_dir: Path,
-                 threshold: float, url: str) -> None:
+                 threshold: float, url: str, archive_json: bool = True) -> None:
     log("")
     log(f"Processing: {wav_path.name}")
 
@@ -281,10 +327,12 @@ def process_file(wav_path: Path, json_path, input_dir: Path, output_dir: Path,
     shutil.move(str(wav_path), str(wav_archive))
     log(f"  Archived source WAV: {wav_archive}")
 
-    if json_path:
+    if json_path and archive_json:
         json_archive = archive_dir / json_path.name
         shutil.move(str(json_path), str(json_archive))
         log(f"  Archived source JSON: {json_archive}")
+    elif json_path and not archive_json:
+        log(f"  JSON already archived by a previous WAV this batch: {json_path.name}")
     else:
         log("  No source JSON found to archive.")
 
@@ -358,9 +406,17 @@ def stop_diarizer(container: str) -> None:
 
 
 def run_batch(wav_files, input_dir, output_dir, threshold, url) -> None:
+    # Track JSONs already paired this batch so a JSON shared by multiple WAVs
+    # (HiDock's Rec00, Rec01, … for one meeting) gets attached to every WAV
+    # but is only moved to .archive/ once.
+    seen_jsons = set()
     for wav in wav_files:
         json_path = find_json_for_wav(wav)
-        process_file(wav, json_path, input_dir, output_dir, threshold, url)
+        archive_json = json_path is not None and json_path not in seen_jsons
+        if json_path is not None:
+            seen_jsons.add(json_path)
+        process_file(wav, json_path, input_dir, output_dir, threshold, url,
+                     archive_json=archive_json)
 
 
 def main() -> None:
