@@ -465,12 +465,15 @@ def write_manifest(processed: list, output_dir: Path, run_started: datetime) -> 
     """Drop a markdown checklist of the run's outputs into <output>/task-list/.
 
     Designed to be dragged into a Claude cowork chat: the file tells the
-    assistant exactly which diarizer responses to clean up and names both
-    the response JSON and the meeting metadata JSON for each meeting. File
-    paths are intentionally basenames only — the consumer is expected to
-    glob the meetings tree for them, which works regardless of whether
-    they're accessing it as `/output`, `/mnt/user/...`, a UNC share, or
-    a mapped drive.
+    assistant exactly which diarizer responses to clean up and gives both
+    the response JSON and the meeting metadata JSON for each meeting.
+
+    Paths are written relative to the meetings root (the `output_dir` the
+    script ran with) using forward slashes, so the consumer can prepend
+    whatever absolute prefix they're using — `/output` inside the bridge
+    container, `/mnt/user/data/media/meetings` on Unraid,
+    `\\\\192.168.1.25\\data\\media\\meetings` over SMB, or a mapped drive
+    letter — without the script having to know which.
     """
     if not processed:
         return None
@@ -488,10 +491,13 @@ def write_manifest(processed: list, output_dir: Path, run_started: datetime) -> 
                 manifest_path = candidate
                 break
 
+    def rel(p: Path) -> str:
+        return p.relative_to(output_dir).as_posix()
+
     lines = []
     lines.append(f"# Diarizer batch — {run_started.strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append("")
-    lines.append(f"{len(processed)} meeting(s) processed. For each item below, search the meetings folder for the listed files and run the `transcript-cleanup-agent` skill on the diarizer response JSON.")
+    lines.append(f"{len(processed)} meeting(s) processed. Paths below are relative to the meetings root ({output_dir.as_posix()} inside this container). For each item, run the `transcript-cleanup-agent` skill on the diarizer response JSON.")
     lines.append("")
     lines.append("## Meetings")
     lines.append("")
@@ -503,9 +509,9 @@ def write_manifest(processed: list, output_dir: Path, run_started: datetime) -> 
         if organizer:
             header += f" — {organizer}"
         lines.append(header)
-        lines.append(f"    - Diarizer response: `{p['response_file'].name}`")
+        lines.append(f"    - Diarizer response: `{rel(p['response_file'])}`")
         if p["metadata_file"] is not None:
-            lines.append(f"    - Meeting metadata: `{p['metadata_file'].name}`")
+            lines.append(f"    - Meeting metadata: `{rel(p['metadata_file'])}`")
     lines.append("")
 
     manifest_path.write_text("\n".join(lines), encoding="utf-8")
