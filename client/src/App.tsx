@@ -67,6 +67,10 @@ function formatDate(d: Date): string {
 }
 
 const AUTO_DELETE_KEY = 'openhinotes_bridge_auto_delete';
+const THRESHOLD_KEY = 'openhinotes_bridge_threshold';
+const THRESHOLD_DEFAULT = 0.35;
+const THRESHOLD_MIN = 0.1;
+const THRESHOLD_MAX = 0.9;
 
 async function uploadBlob(
   blob: Blob,
@@ -136,6 +140,11 @@ export default function App() {
   const [autoDelete, setAutoDelete] = useState<boolean>(() =>
     typeof localStorage !== 'undefined' && localStorage.getItem(AUTO_DELETE_KEY) === 'true',
   );
+  const [threshold, setThresholdState] = useState<string>(() => {
+    if (typeof localStorage === 'undefined') return String(THRESHOLD_DEFAULT);
+    const saved = localStorage.getItem(THRESHOLD_KEY);
+    return saved ?? String(THRESHOLD_DEFAULT);
+  });
   const jobPollRef = useRef<number | null>(null);
 
   const toggleAutoDelete = useCallback((next: boolean) => {
@@ -147,6 +156,16 @@ export default function App() {
       // localStorage unavailable (private mode etc.); not fatal
     }
   }, []);
+
+  const setThreshold = useCallback((next: string) => {
+    setThresholdState(next);
+    try { localStorage.setItem(THRESHOLD_KEY, next); } catch { /* not fatal */ }
+  }, []);
+
+  const thresholdNum = Number(threshold);
+  const thresholdValid =
+    threshold !== '' && Number.isFinite(thresholdNum) &&
+    thresholdNum >= THRESHOLD_MIN && thresholdNum <= THRESHOLD_MAX;
 
   // Load server config + file list on mount
   useEffect(() => {
@@ -345,7 +364,11 @@ export default function App() {
 
   const handleRunProcess = useCallback(async () => {
     try {
-      const r = await fetch('/api/process', { method: 'POST' });
+      const r = await fetch('/api/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threshold: thresholdNum }),
+      });
       const data = await r.json();
       if (!r.ok) {
         setJob({
@@ -363,7 +386,7 @@ export default function App() {
         exitCode: null, stdout: '', stderr: (err as Error).message, pid: null,
       });
     }
-  }, []);
+  }, [thresholdNum]);
 
   const toggleSelected = useCallback((id: string) => {
     setSelected((s) => {
@@ -558,6 +581,20 @@ export default function App() {
         <div className="toolbar">
           <strong>Server-side processing</strong>
           <div className="spacer" />
+          <label className="muted" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            Threshold
+            <input
+              type="number"
+              min={THRESHOLD_MIN}
+              max={THRESHOLD_MAX}
+              step={0.05}
+              value={threshold}
+              onChange={(e) => setThreshold(e.target.value)}
+              disabled={job?.status === 'running'}
+              style={{ width: 70 }}
+              title={`Speaker-match similarity cutoff (${THRESHOLD_MIN}–${THRESHOLD_MAX}). Default ${THRESHOLD_DEFAULT}.`}
+            />
+          </label>
           {job && (
             <span className={`status-pill ${job.status}`}>
               {job.status}{job.exitCode !== null ? ` · exit ${job.exitCode}` : ''}
@@ -565,11 +602,13 @@ export default function App() {
           )}
           <button
             onClick={handleRunProcess}
-            disabled={!serverConfig?.processConfigured || job?.status === 'running'}
+            disabled={!serverConfig?.processConfigured || job?.status === 'running' || !thresholdValid}
             title={
-              serverConfig?.processConfigured
-                ? 'Run the configured HIDOCK_PROCESS_CMD'
-                : 'HIDOCK_PROCESS_CMD is not set on the server'
+              !serverConfig?.processConfigured
+                ? 'HIDOCK_PROCESS_CMD is not set on the server'
+                : !thresholdValid
+                  ? `Threshold must be between ${THRESHOLD_MIN} and ${THRESHOLD_MAX}`
+                  : `Run the configured HIDOCK_PROCESS_CMD (threshold=${thresholdNum})`
             }
           >
             {job?.status === 'running' ? 'Running…' : 'Run process'}

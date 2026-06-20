@@ -178,7 +178,7 @@ async function startServer(): Promise<void> {
     }
   });
 
-  app.post('/api/process', async (_req, reply) => {
+  app.post<{ Body?: { threshold?: number } }>('/api/process', async (req, reply) => {
     if (!PROCESS_CMD) {
       return reply.code(412).send({
         error: 'HIDOCK_PROCESS_CMD is not configured. Set this env var to a shell command and restart.',
@@ -186,6 +186,20 @@ async function startServer(): Promise<void> {
     }
     if (currentJob.status === 'running') {
       return reply.code(409).send({ error: 'a job is already running', job: jobView() });
+    }
+
+    // Optional per-run overrides. Validated here so a bad value fails fast at
+    // the API boundary instead of getting silently passed through to the script.
+    const extraEnv: Record<string, string> = {};
+    const body = req.body ?? {};
+    if (body.threshold !== undefined) {
+      const t = Number(body.threshold);
+      if (!Number.isFinite(t) || t < 0.1 || t > 0.9) {
+        return reply.code(400).send({
+          error: `threshold must be a number between 0.1 and 0.9 (got ${body.threshold})`,
+        });
+      }
+      extraEnv.DIARIZER_THRESHOLD = String(t);
     }
 
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -204,7 +218,7 @@ async function startServer(): Promise<void> {
     const child = spawn(PROCESS_CMD, {
       shell: true,
       cwd: STORAGE_PATH,
-      env: { ...process.env, HIDOCK_STORAGE_PATH: STORAGE_PATH },
+      env: { ...process.env, HIDOCK_STORAGE_PATH: STORAGE_PATH, ...extraEnv },
     });
 
     currentJob.pid = child.pid ?? null;
