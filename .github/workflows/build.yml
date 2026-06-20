@@ -112,4 +112,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: false
+          # Leave provenance/sbom at buildx defaults so the pushed tag points
+          # at an OCI image index (not a bare single manifest). Unraid's
+          # Docker update checker reads the index format; without it the tag
+          # shows as "not available" on the Docker page even though pulls work.
