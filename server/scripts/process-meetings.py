@@ -296,7 +296,8 @@ def has_transcript_text(segments: list) -> bool:
 
 
 def process_file(wav_path: Path, json_path, input_dir: Path, output_dir: Path,
-                 threshold: float, url: str, archive_json: bool = True) -> None:
+                 threshold: float, url: str, archive_json: bool = True,
+                 processed: list = None) -> None:
     log("")
     log(f"Processing: {wav_path.name}")
 
@@ -380,6 +381,17 @@ def process_file(wav_path: Path, json_path, input_dir: Path, output_dir: Path,
     else:
         log("  No source JSON found to archive.")
 
+    if processed is not None:
+        processed.append({
+            "wav_stem": wav_path.stem,
+            "response_file": response_file,
+            "metadata_file": (details_dir / json_path.name) if json_path else None,
+            "details_dir": details_dir,
+            "subject": metadata.get("subject", ""),
+            "organizer": metadata.get("organizer", ""),
+            "is_recurring": is_recurring,
+        })
+
     log("  Done.")
 
 
@@ -449,11 +461,63 @@ def stop_diarizer(container: str) -> None:
         log(f"  WARNING: could not stop diarizer container: {e}")
 
 
-def run_batch(wav_files, input_dir, output_dir, threshold, url) -> None:
+def write_manifest(processed: list, output_dir: Path, run_started: datetime) -> Path:
+    """Drop a markdown checklist of the run's outputs into <output>/task-list/.
+
+    Designed to be dragged into a Claude cowork chat: the file tells the
+    assistant exactly which diarizer responses to clean up and names both
+    the response JSON and the meeting metadata JSON for each meeting. File
+    paths are intentionally basenames only — the consumer is expected to
+    glob the meetings tree for them, which works regardless of whether
+    they're accessing it as `/output`, `/mnt/user/...`, a UNC share, or
+    a mapped drive.
+    """
+    if not processed:
+        return None
+
+    task_list_dir = output_dir / "task-list"
+    task_list_dir.mkdir(parents=True, exist_ok=True)
+
+    stamp = run_started.strftime("%Y-%m-%d_%H-%M-%S")
+    manifest_path = task_list_dir / f"{stamp}.md"
+    if manifest_path.exists():
+        # Two runs in the same second — unlikely but cheap to guard against.
+        for n in range(2, 100):
+            candidate = task_list_dir / f"{stamp}-{n}.md"
+            if not candidate.exists():
+                manifest_path = candidate
+                break
+
+    lines = []
+    lines.append(f"# Diarizer batch — {run_started.strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append("")
+    lines.append(f"{len(processed)} meeting(s) processed. For each item below, search the meetings folder for the listed files and run the `transcript-cleanup-agent` skill on the diarizer response JSON.")
+    lines.append("")
+    lines.append("## Meetings")
+    lines.append("")
+    for p in processed:
+        subject = p["subject"] or p["wav_stem"]
+        organizer = p.get("organizer") or ""
+        recurring = " (recurring)" if p.get("is_recurring") else ""
+        header = f"- [ ] **{subject}**{recurring}"
+        if organizer:
+            header += f" — {organizer}"
+        lines.append(header)
+        lines.append(f"    - Diarizer response: `{p['response_file'].name}`")
+        if p["metadata_file"] is not None:
+            lines.append(f"    - Meeting metadata: `{p['metadata_file'].name}`")
+    lines.append("")
+
+    manifest_path.write_text("\n".join(lines), encoding="utf-8")
+    return manifest_path
+
+
+def run_batch(wav_files, input_dir, output_dir, threshold, url, run_started: datetime) -> None:
     # Track JSONs already paired this batch so a JSON shared by multiple WAVs
     # (HiDock's Rec00, Rec01, … for one meeting) gets attached to every WAV
     # but is only moved to .archive/ once.
     seen_jsons = set()
+    processed = []
     for wav in wav_files:
         json_path = find_json_for_wav(wav)
         archive_json = json_path is not None and json_path not in seen_jsons
@@ -465,7 +529,14 @@ def run_batch(wav_files, input_dir, output_dir, threshold, url) -> None:
             # stem match upstream/downstream of this script.
             wav = rename_wav_to_match_json(wav, json_path)
         process_file(wav, json_path, input_dir, output_dir, threshold, url,
-                     archive_json=archive_json)
+                     archive_json=archive_json, processed=processed)
+
+    if processed:
+        manifest = write_manifest(processed, output_dir, run_started)
+        if manifest is not None:
+            log("")
+            log(f"Manifest written: {manifest}")
+            log(f"  ({len(processed)} meeting(s) ready for transcript cleanup)")
 
 
 def main() -> None:
@@ -508,15 +579,17 @@ def main() -> None:
         log("No WAV files found.")
         return
 
+    run_started = datetime.now()
+
     if args.no_power_mgmt:
         log("Power management disabled — assuming diarizer container is already running.")
-        run_batch(wav_files, input_dir, output_dir, args.threshold, args.url)
+        run_batch(wav_files, input_dir, output_dir, args.threshold, args.url, run_started)
         return
 
     health_url = diarizer_base_url(args.url)
     try:
         start_diarizer(args.diarizer_container, health_url, args.ready_timeout)
-        run_batch(wav_files, input_dir, output_dir, args.threshold, args.url)
+        run_batch(wav_files, input_dir, output_dir, args.threshold, args.url, run_started)
     finally:
         stop_diarizer(args.diarizer_container)
 
