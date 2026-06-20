@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>openhinotes-bridge</Name>
+  <Repository>ghcr.io/teejs/openhinotes-bridge:latest</Repository>
+  <Registry/>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support/>
+  <Project/>
+  <ReadMe/>
+  <Overview>Bare-bones WebUSB bridge for HiDock P1: connect from browser, list/play/download/delete recordings on the device, push them to a server share, and trigger an external processing command. Single container; pair with NPMPlus for HTTPS.</Overview>
+  <Category/>
+  <WebUI>http://[IP]:[PORT:3000]/</WebUI>
+  <TemplateURL/>
+  <Icon></Icon>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <PostArgs></PostArgs>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="Port 3000" Target="3000" Default="" Mode="tcp" Description="" Type="Port" Display="always" Required="true" Mask="false">3000</Config>
+  <Config Name="Path /data" Target="/data" Default="" Mode="rw" Description="" Type="Path" Display="always" Required="false" Mask="false">/mnt/user/appdata/openhinotes-bridge</Config>
+  <Config Name="HIDOCK_STORAGE_PATH" Target="HIDOCK_STORAGE_PATH" Default="" Mode="" Description="" Type="Variable" Display="always" Required="false" Mask="false">/data</Config>
+  <Config Name="HIDOCK_PROCESS_CMD" Target="HIDOCK_PROCESS_CMD" Default="" Mode="" Description="" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <TailscaleStateDir/>
+</Container>
