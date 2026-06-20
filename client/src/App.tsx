@@ -66,6 +66,8 @@ function formatDate(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+const AUTO_DELETE_KEY = 'openhinotes_bridge_auto_delete';
+
 async function uploadBlob(
   blob: Blob,
   filename: string,
@@ -119,6 +121,7 @@ export default function App() {
     refreshRecordings,
     downloadRecording,
     deleteRecording,
+    deleteFileSilently,
     syncTime,
     clearError,
   } = useDeviceConnection();
@@ -130,7 +133,20 @@ export default function App() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null);
+  const [autoDelete, setAutoDelete] = useState<boolean>(() =>
+    typeof localStorage !== 'undefined' && localStorage.getItem(AUTO_DELETE_KEY) === 'true',
+  );
   const jobPollRef = useRef<number | null>(null);
+
+  const toggleAutoDelete = useCallback((next: boolean) => {
+    setAutoDelete(next);
+    try {
+      if (next) localStorage.setItem(AUTO_DELETE_KEY, 'true');
+      else localStorage.removeItem(AUTO_DELETE_KEY);
+    } catch {
+      // localStorage unavailable (private mode etc.); not fatal
+    }
+  }, []);
 
   // Load server config + file list on mount
   useEffect(() => {
@@ -224,7 +240,11 @@ export default function App() {
     setRow(rec.id, { note: 'downloaded' });
   }, [downloadRecording, setRow]);
 
-  const handlePushToServer = useCallback(async (rec: AudioRecording) => {
+  // Returns true iff the file was successfully removed from the device.
+  // Caller is responsible for refreshing the device file list afterwards
+  // (single-row Push refreshes inside the click handler; bulk Push waits
+  // until the loop is done so we don't pay for a GET_FILE_LIST per row).
+  const handlePushToServer = useCallback(async (rec: AudioRecording): Promise<boolean> => {
     setRow(rec.id, { note: undefined });
     const blob = await downloadRecording(
       rec.fileName,
@@ -233,16 +253,60 @@ export default function App() {
       rec.fileVersion,
     );
     setRow(rec.id, { downloadPct: undefined });
-    if (!blob) return;
+    if (!blob) return false;
+
+    let serverFile: { name: string; size: number; mtime: string };
     try {
       setRow(rec.id, { uploadPct: 0 });
-      await uploadBlob(blob, targetFilename(rec), (pct) => setRow(rec.id, { uploadPct: pct }));
-      setRow(rec.id, { uploadPct: undefined, note: 'pushed to server' });
-      refreshServerFiles();
+      serverFile = await uploadBlob(blob, targetFilename(rec), (pct) => setRow(rec.id, { uploadPct: pct }));
     } catch (err) {
       setRow(rec.id, { uploadPct: undefined, note: `upload failed: ${(err as Error).message}` });
+      return false;
     }
-  }, [downloadRecording, setRow, refreshServerFiles]);
+    setRow(rec.id, { uploadPct: undefined });
+    refreshServerFiles();
+
+    // Verify (medium): server-reported on-disk size == client blob size.
+    if (serverFile.size !== blob.size) {
+      setRow(rec.id, {
+        note: `size mismatch (sent ${blob.size}, server ${serverFile.size}) — left on device`,
+      });
+      return false;
+    }
+
+    if (!autoDelete) {
+      setRow(rec.id, { note: `pushed (${formatBytes(serverFile.size)})` });
+      return false;
+    }
+
+    // Verified — remove from device. Use the silent variant so a bulk push
+    // doesn't fire GET_FILE_LIST after every single row; caller refreshes.
+    try {
+      await deleteFileSilently(rec.fileName);
+      setRow(rec.id, { note: 'pushed, deleted from device' });
+      return true;
+    } catch (err) {
+      setRow(rec.id, {
+        note: `pushed; device delete failed: ${(err as Error).message}`,
+      });
+      return false;
+    }
+  }, [downloadRecording, setRow, refreshServerFiles, autoDelete, deleteFileSilently]);
+
+  // Single-row Push button click: push the file, and if we deleted from
+  // device, refresh the device list so the row disappears.
+  const handlePushRowClick = useCallback(async (rec: AudioRecording) => {
+    const deleted = await handlePushToServer(rec);
+    if (deleted) {
+      setSelected((s) => {
+        if (!s.has(rec.id)) return s;
+        const next = new Set(s);
+        next.delete(rec.id);
+        return next;
+      });
+      await refreshRecordings();
+    }
+  }, [handlePushToServer, refreshRecordings]);
 
   const handleDeleteFromDevice = useCallback(async (rec: AudioRecording) => {
     setRow(rec.id, { deleting: true });
@@ -260,12 +324,24 @@ export default function App() {
     const targets = recordings.filter((r) => selected.has(r.id));
     if (targets.length === 0) return;
     setBulkBusy(true);
+    const deletedIds = new Set<string>();
     for (const rec of targets) {
       // eslint-disable-next-line no-await-in-loop
-      await handlePushToServer(rec);
+      const deleted = await handlePushToServer(rec);
+      if (deleted) deletedIds.add(rec.id);
     }
     setBulkBusy(false);
-  }, [recordings, selected, handlePushToServer]);
+    if (deletedIds.size > 0) {
+      // Clear deleted rows from selection, then a single refresh covers
+      // all device deletions instead of one GET_FILE_LIST per row.
+      setSelected((s) => {
+        const next = new Set(s);
+        for (const id of deletedIds) next.delete(id);
+        return next;
+      });
+      await refreshRecordings();
+    }
+  }, [recordings, selected, handlePushToServer, refreshRecordings]);
 
   const handleRunProcess = useCallback(async () => {
     try {
@@ -361,6 +437,17 @@ export default function App() {
                 Sync device clock
               </button>
               <button className="secondary" onClick={disconnectDevice}>Disconnect</button>
+              <label
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+                title="After upload, verify the server's on-disk size matches the bytes we sent; if so, delete the file from the device. Setting persists across reloads."
+              >
+                <input
+                  type="checkbox"
+                  checked={autoDelete}
+                  onChange={(e) => toggleAutoDelete(e.target.checked)}
+                />
+                <span className="label-dim">Delete from device after successful push</span>
+              </label>
               <div className="spacer" />
               <span className="label-dim">
                 {selected.size} selected · {formatBytes(totalSelectedBytes)}
@@ -369,7 +456,7 @@ export default function App() {
                 onClick={handlePushSelected}
                 disabled={selected.size === 0 || bulkBusy}
               >
-                {bulkBusy ? 'Pushing…' : 'Push selected to server'}
+                {bulkBusy ? 'Pushing…' : autoDelete ? 'Push & remove selected' : 'Push selected to server'}
               </button>
             </>
           )}
@@ -440,7 +527,12 @@ export default function App() {
                         <td className="actions">
                           <button className="secondary" onClick={() => handlePlay(rec)}>Play</button>
                           <button className="secondary" onClick={() => handleDownloadToBrowser(rec)}>Download</button>
-                          <button onClick={() => handlePushToServer(rec)}>Push</button>
+                          <button
+                            onClick={() => handlePushRowClick(rec)}
+                            title={autoDelete ? 'Download from device → upload → verify → delete from device' : 'Download from device → upload to server'}
+                          >
+                            {autoDelete ? 'Push & remove' : 'Push'}
+                          </button>
                           {confirmDeleteName === rec.fileName ? (
                             <>
                               <button className="danger" onClick={() => handleDeleteFromDevice(rec)} disabled={rs.deleting}>

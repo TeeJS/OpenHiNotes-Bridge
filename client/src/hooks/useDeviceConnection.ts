@@ -123,6 +123,15 @@ export function useDeviceConnection() {
     [refreshRecordings],
   );
 
+  // Like deleteRecording, but does not refresh the file list or touch
+  // isLoading/error state. Used by bulk push-then-delete so we don't pay
+  // for a GET_FILE_LIST after every single row — caller refreshes once
+  // at the end. Throws so the caller can record per-row failures.
+  const deleteFileSilently = useCallback(async (fileName: string) => {
+    if (!deviceService.isConnected()) throw new Error('Device not connected');
+    await deviceService.deleteFile(fileName);
+  }, []);
+
   const syncTime = useCallback(async () => {
     if (!deviceService.isConnected()) {
       setError('Device not connected');
@@ -146,6 +155,7 @@ export function useDeviceConnection() {
     refreshRecordings,
     downloadRecording,
     deleteRecording,
+    deleteFileSilently,
     syncTime,
     clearError: () => setError(null),
   };
