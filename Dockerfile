@@ -24,19 +24,30 @@ RUN npm prune --omit=dev
 FROM node:20-alpine AS runtime
 WORKDIR /app
 
+# python3 runs server/scripts/process-meetings.py (the diarizer batch driver);
+# docker-cli lets that script start/stop the meeting-diarizer container via a
+# bind-mounted /var/run/docker.sock so the GPU is only loaded while a job runs.
+RUN apk add --no-cache python3 docker-cli
+
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
 ENV HIDOCK_STORAGE_PATH=/data
+ENV HIDOCK_PROCESS_CMD="python3 /app/scripts/process-meetings.py"
+ENV DIARIZER_URL="http://192.168.1.25:10301/transcribe"
+ENV DIARIZER_OUTPUT_DIR=/output
+ENV DIARIZER_THRESHOLD=0.35
+ENV MEETING_DIARIZER_CONTAINER=meeting-diarizer
 
 # Bring built artifacts and pruned node_modules
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/package.json ./package.json
+COPY server/scripts ./scripts
 
-# Default storage volume
-RUN mkdir -p /data
-VOLUME ["/data"]
+# Default storage volume + diarizer output mountpoint
+RUN mkdir -p /data /output
+VOLUME ["/data", "/output"]
 
 EXPOSE 3000
 

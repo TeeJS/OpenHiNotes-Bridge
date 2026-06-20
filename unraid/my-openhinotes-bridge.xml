@@ -10,7 +10,7 @@
   <Support/>
   <Project/>
   <ReadMe/>
-  <Overview>Bare-bones WebUSB bridge for HiDock P1: connect from browser, list/play/download/delete recordings on the device, push them to a server share, and trigger an external processing command. Single container; pair with NPMPlus for HTTPS.</Overview>
+  <Overview>Bare-bones WebUSB bridge for HiDock P1: connect from browser, list/play/download/delete recordings on the device, push them to a server share, and trigger the meeting-diarizer batch run. Single container; pair with NPMPlus for HTTPS.</Overview>
   <Category/>
   <WebUI>http://[IP]:[PORT:3000]/</WebUI>
   <TemplateURL/>
@@ -23,8 +23,16 @@
   <DonateLink/>
   <Requires/>
   <Config Name="Port 3000" Target="3000" Default="" Mode="tcp" Description="" Type="Port" Display="always" Required="true" Mask="false">3000</Config>
-  <Config Name="Path /data" Target="/data" Default="" Mode="rw" Description="" Type="Path" Display="always" Required="false" Mask="false">/mnt/user/appdata/openhinotes-bridge</Config>
-  <Config Name="HIDOCK_STORAGE_PATH" Target="HIDOCK_STORAGE_PATH" Default="" Mode="" Description="" Type="Variable" Display="always" Required="false" Mask="false">/data</Config>
-  <Config Name="HIDOCK_PROCESS_CMD" Target="HIDOCK_PROCESS_CMD" Default="" Mode="" Description="" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Path /data" Target="/data" Default="" Mode="rw" Description="Raw recordings dropped here by 'Push to server' and consumed by the diarizer batch driver." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/data/media/meetings/processing</Config>
+  <Config Name="Path /output" Target="/output" Default="" Mode="rw" Description="Where diarized transcripts and per-meeting details/ folders are written." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/data/media/meetings</Config>
+  <Config Name="Docker socket" Target="/var/run/docker.sock" Default="" Mode="rw" Description="Mounted so the diarizer batch driver can start/stop the meeting-diarizer container directly. Grants root-equivalent host control to anything inside this container — keep behind NPMPlus on LAN." Type="Path" Display="always" Required="true" Mask="false">/var/run/docker.sock</Config>
+  <Config Name="HIDOCK_STORAGE_PATH" Target="HIDOCK_STORAGE_PATH" Default="/data" Mode="" Description="" Type="Variable" Display="always" Required="false" Mask="false">/data</Config>
+  <Config Name="HIDOCK_PROCESS_CMD" Target="HIDOCK_PROCESS_CMD" Default="python3 /app/scripts/process-meetings.py" Mode="" Description="Command spawned by the 'Run process' button. Clear this to disable the diarizer integration." Type="Variable" Display="always" Required="false" Mask="false">python3 /app/scripts/process-meetings.py</Config>
+  <Config Name="DIARIZER_URL" Target="DIARIZER_URL" Default="http://192.168.1.25:10301/transcribe" Mode="" Description="meeting-diarizer transcribe endpoint." Type="Variable" Display="always" Required="false" Mask="false">http://192.168.1.25:10301/transcribe</Config>
+  <Config Name="DIARIZER_OUTPUT_DIR" Target="DIARIZER_OUTPUT_DIR" Default="/output" Mode="" Description="Where the batch driver writes results inside the container (mounted from /mnt/user/data/media/meetings)." Type="Variable" Display="always" Required="false" Mask="false">/output</Config>
+  <Config Name="DIARIZER_THRESHOLD" Target="DIARIZER_THRESHOLD" Default="0.35" Mode="" Description="Speaker-similarity cutoff passed to the diarizer." Type="Variable" Display="always" Required="false" Mask="false">0.35</Config>
+  <Config Name="MEETING_DIARIZER_CONTAINER" Target="MEETING_DIARIZER_CONTAINER" Default="meeting-diarizer" Mode="" Description="Name of the diarizer container the batch driver starts and stops." Type="Variable" Display="always" Required="false" Mask="false">meeting-diarizer</Config>
+  <Config Name="DIARIZER_READY_TIMEOUT" Target="DIARIZER_READY_TIMEOUT" Default="300" Mode="" Description="Seconds to wait for the diarizer to answer /health after docker start." Type="Variable" Display="advanced" Required="false" Mask="false">300</Config>
+  <Config Name="DIARIZER_SKIP_POWER_MGMT" Target="DIARIZER_SKIP_POWER_MGMT" Default="" Mode="" Description="Set to 1/true to keep the diarizer always running (skip docker start/stop)." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <TailscaleStateDir/>
 </Container>
