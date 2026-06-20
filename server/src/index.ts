@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -160,6 +160,50 @@ async function startServer(): Promise<void> {
       return reply.code(500).send({ error: 'upload failed' });
     }
   });
+
+  // Stream a single file from STORAGE_PATH. ?download=1 forces a "Save As"
+  // disposition; without it the browser will inline-play known audio types.
+  app.get<{ Params: { name: string }; Querystring: { download?: string } }>(
+    '/api/files/:name',
+    async (req, reply) => {
+      const safeName = path.basename(req.params.name);
+      if (!isSafeFilename(safeName)) {
+        return reply.code(400).send({ error: 'invalid filename' });
+      }
+      const target = path.join(STORAGE_PATH, safeName);
+      let stat;
+      try {
+        stat = await fs.stat(target);
+      } catch (err) {
+        const e = err as NodeJS.ErrnoException;
+        if (e.code === 'ENOENT') return reply.code(404).send({ error: 'not found' });
+        throw err;
+      }
+      if (!stat.isFile()) return reply.code(404).send({ error: 'not a file' });
+
+      const ext = path.extname(safeName).toLowerCase();
+      const mime =
+        ext === '.wav'  ? 'audio/wav'   :
+        ext === '.mp3'  ? 'audio/mpeg'  :
+        ext === '.m4a'  ? 'audio/mp4'   :
+        ext === '.ogg'  ? 'audio/ogg'   :
+        ext === '.flac' ? 'audio/flac'  :
+        ext === '.json' ? 'application/json' :
+        ext === '.txt'  ? 'text/plain'  :
+        'application/octet-stream';
+
+      reply.header('Content-Type', mime);
+      reply.header('Content-Length', String(stat.size));
+      if (req.query.download) {
+        // RFC 5987 encoding handles names with spaces or non-ASCII characters.
+        reply.header(
+          'Content-Disposition',
+          `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}`,
+        );
+      }
+      return reply.send(createReadStream(target));
+    },
+  );
 
   app.delete<{ Params: { name: string } }>('/api/files/:name', async (req, reply) => {
     const safeName = path.basename(req.params.name);

@@ -1,12 +1,14 @@
 :root {
-  color-scheme: dark light;
+  color-scheme: dark;
   --bg: #0f1115;
   --bg-elev: #181b22;
   --bg-row: #1f232c;
   --bg-row-hover: #262b35;
+  --bg-code: #0a0d13;
   --border: #2a2f3a;
   --text: #e6e8ef;
   --text-dim: #99a0b3;
+  --button-text: #0a0d13;
   --accent: #6aa9ff;
   --accent-hover: #87baff;
   --danger: #ff6a6a;
@@ -14,6 +16,25 @@
   --success: #5fd38d;
   --warn: #f0c674;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f6fa;
+  --bg-elev: #ffffff;
+  --bg-row: #f0f2f6;
+  --bg-row-hover: #e6eaf2;
+  --bg-code: #f0f2f6;
+  --border: #d6dae3;
+  --text: #1a1e26;
+  --text-dim: #5b6478;
+  --button-text: #ffffff;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --danger: #dc2626;
+  --danger-hover: #b91c1c;
+  --success: #16a34a;
+  --warn: #b45309;
 }
 
 * { box-sizing: border-box; }
@@ -30,7 +51,7 @@ a { color: var(--accent); }
 button {
   font: inherit;
   background: var(--accent);
-  color: #0a0d13;
+  color: var(--button-text);
   border: none;
   border-radius: 6px;
   padding: 6px 12px;
@@ -45,7 +66,7 @@ button.secondary {
   border: 1px solid var(--border);
 }
 button.secondary:hover:not(:disabled) { background: var(--bg-row-hover); }
-button.danger { background: var(--danger); color: #1a0a0a; }
+button.danger { background: var(--danger); color: var(--button-text); }
 button.danger:hover:not(:disabled) { background: var(--danger-hover); }
 button.ghost {
   background: transparent;
@@ -97,6 +118,15 @@ input[type="checkbox"] {
   gap: 2px;
 }
 .header .device-info strong { color: var(--text); font-weight: 600; }
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.theme-toggle {
+  font-size: 12px;
+  letter-spacing: 0.3px;
+}
 
 .panel {
   background: var(--bg-elev);
@@ -172,7 +202,7 @@ table.recordings td.actions button { margin-left: 6px; }
 audio { vertical-align: middle; height: 32px; }
 
 .process-panel pre {
-  background: #0a0d13;
+  background: var(--bg-code);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px;

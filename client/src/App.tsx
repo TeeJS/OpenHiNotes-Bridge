@@ -71,6 +71,19 @@ const THRESHOLD_KEY = 'openhinotes_bridge_threshold';
 const THRESHOLD_DEFAULT = 0.35;
 const THRESHOLD_MIN = 0.1;
 const THRESHOLD_MAX = 0.9;
+const THEME_KEY = 'openhinotes_bridge_theme';
+type Theme = 'light' | 'dark';
+
+function getInitialTheme(): Theme {
+  if (typeof localStorage !== 'undefined') {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === 'light' || saved === 'dark') return saved;
+  }
+  if (typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: light)').matches) {
+    return 'light';
+  }
+  return 'dark';
+}
 
 async function uploadBlob(
   blob: Blob,
@@ -145,7 +158,13 @@ export default function App() {
     const saved = localStorage.getItem(THRESHOLD_KEY);
     return saved ?? String(THRESHOLD_DEFAULT);
   });
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const jobPollRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem(THEME_KEY, theme); } catch { /* not fatal */ }
+  }, [theme]);
 
   const toggleAutoDelete = useCallback((next: boolean) => {
     setAutoDelete(next);
@@ -217,6 +236,32 @@ export default function App() {
       // ignore
     }
   }, []);
+
+  const [playingServerFile, setPlayingServerFile] = useState<string | null>(null);
+  const [confirmDeleteServerFile, setConfirmDeleteServerFile] = useState<string | null>(null);
+  const [deletingServerFile, setDeletingServerFile] = useState<string | null>(null);
+
+  const isPlayableAudio = useCallback((name: string): boolean => {
+    const ext = name.toLowerCase().slice(name.lastIndexOf('.'));
+    return ext === '.wav' || ext === '.mp3' || ext === '.m4a' || ext === '.ogg' || ext === '.flac';
+  }, []);
+
+  const handleDeleteServerFile = useCallback(async (name: string) => {
+    setDeletingServerFile(name);
+    try {
+      const r = await fetch(`/api/files/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      if (!r.ok && r.status !== 404) {
+        // Show server's error message in console; UI just refreshes.
+        // eslint-disable-next-line no-console
+        console.error('delete failed', await r.text());
+      }
+      if (playingServerFile === name) setPlayingServerFile(null);
+      await refreshServerFiles();
+    } finally {
+      setDeletingServerFile(null);
+      setConfirmDeleteServerFile(null);
+    }
+  }, [refreshServerFiles, playingServerFile]);
 
   const setRow = useCallback((id: string, patch: RowState) => {
     setRowState((s) => ({ ...s, [id]: { ...s[id], ...patch } }));
@@ -417,18 +462,27 @@ export default function App() {
       <header className="header">
         <div>
           <h1>OpenHiNotes Bridge</h1>
-          <div className="muted">HiDock P1 · WebUSB · single-container</div>
+          <div className="muted">Self-hosted software for HiDock devices</div>
         </div>
-        <div className="device-info">
-          {device?.connected ? (
-            <>
-              <div><strong>{device.name}</strong></div>
-              <div>SN {device.serialNumber} · fw {device.firmwareVersion}</div>
-              {storageSummary && <div>{storageSummary}</div>}
-            </>
-          ) : (
-            <div className="muted">No device connected</div>
-          )}
+        <div className="header-right">
+          <button
+            className="ghost theme-toggle"
+            onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            {theme === 'dark' ? 'Light' : 'Dark'}
+          </button>
+          <div className="device-info">
+            {device?.connected ? (
+              <>
+                <div><strong>{device.name}</strong></div>
+                <div>SN {device.serialNumber} · fw {device.firmwareVersion}</div>
+                {storageSummary && <div>{storageSummary}</div>}
+              </>
+            ) : (
+              <div className="muted">No device connected</div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -613,6 +667,15 @@ export default function App() {
           >
             {job?.status === 'running' ? 'Running…' : 'Run process'}
           </button>
+          {job && job.status !== 'running' && (
+            <button
+              className="ghost"
+              onClick={() => setJob(null)}
+              title="Clear the output panel (does not affect the server)"
+            >
+              Clear
+            </button>
+          )}
         </div>
         {!serverConfig?.processConfigured && (
           <div className="banner info" style={{ marginTop: 10 }}>
@@ -661,16 +724,64 @@ export default function App() {
                   <th>Filename</th>
                   <th>Modified</th>
                   <th className="right">Size</th>
+                  <th className="right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {serverFiles.map((f) => (
-                  <tr key={f.name}>
-                    <td className="filename mono">{f.name}</td>
-                    <td className="mono">{new Date(f.mtime).toLocaleString()}</td>
-                    <td className="right mono">{formatBytes(f.size)}</td>
-                  </tr>
-                ))}
+                {serverFiles.map((f) => {
+                  const fileUrl = `/api/files/${encodeURIComponent(f.name)}`;
+                  const playable = isPlayableAudio(f.name);
+                  const isPlaying = playingServerFile === f.name;
+                  return (
+                    <tr key={f.name}>
+                      <td className="filename mono">
+                        {f.name}
+                        {isPlaying && (
+                          <div style={{ marginTop: 6 }}>
+                            <audio src={fileUrl} controls autoPlay style={{ width: '100%' }} />
+                          </div>
+                        )}
+                      </td>
+                      <td className="mono">{new Date(f.mtime).toLocaleString()}</td>
+                      <td className="right mono">{formatBytes(f.size)}</td>
+                      <td className="actions">
+                        {playable && (
+                          <button
+                            className="secondary"
+                            onClick={() => setPlayingServerFile(isPlaying ? null : f.name)}
+                          >
+                            {isPlaying ? 'Stop' : 'Play'}
+                          </button>
+                        )}
+                        <a
+                          href={`${fileUrl}?download=1`}
+                          download={f.name}
+                          style={{ textDecoration: 'none' }}
+                        >
+                          <button className="secondary">Download</button>
+                        </a>
+                        {confirmDeleteServerFile === f.name ? (
+                          <>
+                            <button
+                              className="danger"
+                              onClick={() => handleDeleteServerFile(f.name)}
+                              disabled={deletingServerFile === f.name}
+                            >
+                              {deletingServerFile === f.name ? 'Deleting…' : 'Confirm delete'}
+                            </button>
+                            <button className="ghost" onClick={() => setConfirmDeleteServerFile(null)}>
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button className="ghost" onClick={() => setConfirmDeleteServerFile(f.name)}>
+                            Delete
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
