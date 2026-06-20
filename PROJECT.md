@@ -1,8 +1,9 @@
 # OpenHiNotes-Bridge — Project Charter
 
 A bare-bones WebUSB bridge for the HiDock P1. Salvaged from the WebUSB driver
-inside [TeeJS/OpenHiNotes](https://github.com/TeeJS/OpenHiNotes); the rest of
-that project (auth, DB, transcription, LLM, queue, sharing) has been scrapped.
+inside [ghecko/OpenHiNotes](https://github.com/ghecko/OpenHiNotes) (Jordan OVRE's
+project); the rest of that project (auth, DB, transcription, LLM, queue,
+sharing) has been scrapped.
 
 ## 1. What this one thing must do
 

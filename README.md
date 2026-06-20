@@ -7,9 +7,9 @@ pushes them to a server-side share where your own scripts can pick them up.
 Single Docker container. No database. No transcription. No LLM. No auth (yet).
 
 Salvaged from the WebUSB driver in
-[TeeJS/OpenHiNotes](https://github.com/TeeJS/OpenHiNotes); the rest of that
-project — auth, FastAPI backend, Postgres, transcription queue, sharing —
-was scrapped on purpose.
+[ghecko/OpenHiNotes](https://github.com/ghecko/OpenHiNotes) (Jordan OVRE's
+project); the rest of that project — auth, FastAPI backend, Postgres,
+transcription queue, sharing — was scrapped on purpose.
 
 ## Architecture in one picture
 
