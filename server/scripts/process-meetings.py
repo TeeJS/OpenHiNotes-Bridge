@@ -12,6 +12,7 @@ captures it for the UI.
 import argparse
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -39,6 +40,17 @@ MONTH_ABBR = {
     "May": "05", "Jun": "06", "Jul": "07", "Aug": "08",
     "Sep": "09", "Oct": "10", "Nov": "11", "Dec": "12",
 }
+# Reverse of MONTH_ABBR for formatting timestamps in the HiDock filename
+# style without relying on locale-dependent strftime(%b).
+MONTH_NUM_TO_ABBR = {v: k for k, v in MONTH_ABBR.items()}
+
+
+def hidock_stamp(dt: datetime, time_sep: str = "") -> str:
+    """Format a datetime as ``YYYYMonDD-HH<sep>MM<sep>SS`` to match the rest
+    of the pipeline (HiDock filenames, archive folders, etc.)."""
+    mon = MONTH_NUM_TO_ABBR[f"{dt.month:02d}"]
+    time_part = dt.strftime(f"%H{time_sep}%M{time_sep}%S")
+    return f"{dt.year}{mon}{dt.day:02d}-{time_part}"
 
 
 def log(message: str) -> None:
@@ -481,7 +493,7 @@ def write_manifest(processed: list, output_dir: Path, run_started: datetime) -> 
     task_list_dir = output_dir / "task-list"
     task_list_dir.mkdir(parents=True, exist_ok=True)
 
-    stamp = run_started.strftime("%Y-%m-%d_%H-%M-%S")
+    stamp = hidock_stamp(run_started)
     manifest_path = task_list_dir / f"{stamp}.md"
     if manifest_path.exists():
         # Two runs in the same second — unlikely but cheap to guard against.
@@ -495,7 +507,7 @@ def write_manifest(processed: list, output_dir: Path, run_started: datetime) -> 
         return p.relative_to(output_dir).as_posix()
 
     lines = []
-    lines.append(f"# Diarizer batch — {run_started.strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"# Diarizer batch — {hidock_stamp(run_started, time_sep=':')}")
     lines.append("")
     lines.append(f"{len(processed)} meeting(s) processed. Paths below are relative to the meetings root ({output_dir.as_posix()} inside this container). For each item, run the `transcript-cleanup-agent` skill on the diarizer response JSON.")
     lines.append("")
