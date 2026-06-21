@@ -40,17 +40,11 @@ MONTH_ABBR = {
     "May": "05", "Jun": "06", "Jul": "07", "Aug": "08",
     "Sep": "09", "Oct": "10", "Nov": "11", "Dec": "12",
 }
-# Reverse of MONTH_ABBR for formatting timestamps in the HiDock filename
-# style without relying on locale-dependent strftime(%b).
-MONTH_NUM_TO_ABBR = {v: k for k, v in MONTH_ABBR.items()}
-
-
-def hidock_stamp(dt: datetime, time_sep: str = "") -> str:
-    """Format a datetime as ``YYYYMonDD-HH<sep>MM<sep>SS`` to match the rest
-    of the pipeline (HiDock filenames, archive folders, etc.)."""
-    mon = MONTH_NUM_TO_ABBR[f"{dt.month:02d}"]
-    time_part = dt.strftime(f"%H{time_sep}%M{time_sep}%S")
-    return f"{dt.year}{mon}{dt.day:02d}-{time_part}"
+def iso_stamp(dt: datetime, with_seconds: bool = True) -> str:
+    """Format a datetime as ``YYYY-MM-DD_HH-MM-SS`` to match what the bridge
+    writes on push. Used by surfaces a human (or downstream tool) sorts:
+    task-list manifests, heading dates."""
+    return dt.strftime("%Y-%m-%d_%H-%M-%S" if with_seconds else "%Y-%m-%d")
 
 
 def log(message: str) -> None:
@@ -149,6 +143,17 @@ def wav_suffix_after_prefix(stem: str) -> str:
     return ''
 
 
+_DEDUP_NORMALIZE_RE = re.compile(r'\s+')
+
+
+def _normalize_for_dedup(s: str) -> str:
+    """Lowercase + treat ``_`` and ``-`` as spaces + collapse whitespace.
+    Lets ``PTS_AI_data_on_Rosie`` substring-match against
+    ``…-PTS AI data on Rosie`` so the rename doesn't duplicate the subject.
+    """
+    return _DEDUP_NORMALIZE_RE.sub(' ', s.lower().replace('_', ' ').replace('-', ' ')).strip()
+
+
 def rename_wav_to_match_json(wav_path: Path, json_path: Path) -> Path:
     """Rename WAV in place so its stem matches the JSON's, return new path.
 
@@ -156,13 +161,25 @@ def rename_wav_to_match_json(wav_path: Path, json_path: Path) -> Path:
     ``2026Jun20-123000-discuss the script``, the WAV becomes
     ``2026Jun20-123000-discuss the script-Rec00.wav``. With no suffix on the
     WAV (just date+time), the result drops the trailing hyphen and matches
-    the JSON stem exactly. Collisions get a numeric ``-2``, ``-3``, … suffix
-    so two WAVs sharing one JSON never overwrite each other.
+    the JSON stem exactly.
+
+    If the WAV's suffix is already substantively present in the JSON stem
+    (e.g. WAV suffix ``PTS_AI_data_on_Rosie`` and JSON contains
+    ``PTS AI data on Rosie``), the suffix is dropped to avoid a doubled
+    name like ``…-PTS AI data on Rosie-PTS_AI_data_on_Rosie.wav``. The
+    HiDock-native ``Rec00`` style suffixes don't trigger this — Outlook
+    subjects never contain a literal ``Rec00`` substring.
+
+    Collisions get a numeric ``-2``, ``-3``, … suffix so two WAVs sharing
+    one JSON never overwrite each other.
     """
     if wav_path.stem == json_path.stem:
         return wav_path
 
     suffix = wav_suffix_after_prefix(wav_path.stem)
+    if suffix and _normalize_for_dedup(suffix) in _normalize_for_dedup(json_path.stem):
+        # Subject already represented in the JSON stem — drop it.
+        suffix = ''
     base = f"{json_path.stem}-{suffix}" if suffix else json_path.stem
     new_path = wav_path.with_name(f"{base}{wav_path.suffix}")
 
@@ -540,7 +557,7 @@ def write_manifest(processed: list, output_dir: Path, run_started: datetime) -> 
     task_list_dir = output_dir / "task-list"
     task_list_dir.mkdir(parents=True, exist_ok=True)
 
-    stamp = hidock_stamp(run_started)
+    stamp = iso_stamp(run_started)
     manifest_path = task_list_dir / f"{stamp}.md"
     if manifest_path.exists():
         # Two runs in the same second — unlikely but cheap to guard against.
@@ -554,7 +571,7 @@ def write_manifest(processed: list, output_dir: Path, run_started: datetime) -> 
         return p.relative_to(output_dir).as_posix()
 
     lines = []
-    lines.append(f"# Diarizer batch — {hidock_stamp(run_started, time_sep=':')}")
+    lines.append(f"# Diarizer batch — {run_started.strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append("")
     lines.append(f"{len(processed)} meeting(s) processed. Paths below are relative to the meetings root ({output_dir.as_posix()} inside this container). For each item, run the `transcript-cleanup-agent` skill on the diarizer response JSON.")
     lines.append("")
