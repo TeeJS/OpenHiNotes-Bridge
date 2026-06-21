@@ -57,25 +57,61 @@ def log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
+# HiDock-native stems:  2026Jun19-222322[-anything]   or   2026Jun19[-anything]
+_HIDOCK_PREFIX_RE = re.compile(
+    r'^(?P<y>\d{4})(?P<mon>[A-Z][a-z]{2})(?P<d>\d{2})'
+    r'(?:-(?P<hh>\d{2})(?P<mm>\d{2})(?P<ss>\d{2}))?'
+)
+# ISO stems written by the bridge UI on push:
+#   2026-06-19_22-23-22[-anything]   or   2026-06-19[-anything]
+# Tolerant of either `_` or `-` separating date from time, since either
+# is a reasonable choice and one-character drift shouldn't lose a pairing.
+_ISO_PREFIX_RE = re.compile(
+    r'^(?P<y>\d{4})-(?P<m>\d{2})-(?P<d>\d{2})'
+    r'(?:[_-](?P<hh>\d{2})-(?P<mm>\d{2})-(?P<ss>\d{2}))?'
+)
+
+
+def _match_date_prefix(stem: str):
+    """Return the regex match for whichever known date-prefix layout the
+    stem starts with, or None. Used by both parse_date_time (which needs
+    the captured groups) and wav_suffix_after_prefix (which needs the
+    end position so it can correctly slice past either prefix style)."""
+    m = _HIDOCK_PREFIX_RE.match(stem)
+    if m is not None:
+        return m
+    return _ISO_PREFIX_RE.match(stem)
+
+
 def parse_date_time(stem: str):
     """Extract (date_iso, seconds_since_midnight_or_None) from a filename stem.
 
-    Accepts ``YYYYMonDD`` followed by anything, or ``YYYYMonDD-HHMMSS`` plus
-    anything. The trailing part of the stem (HiDock's ``-Rec00``, Outlook's
-    meeting subject, etc.) is ignored — the goal is just to recover the date
-    and an optional time for fuzzy pairing. Returns None if the date prefix
-    doesn't parse.
+    Accepts two prefix layouts so HiDock-native filenames and the ISO names
+    the bridge writes on push can pair against each other transparently:
+
+      HiDock:  YYYYMonDD[-HHMMSS][-anything]    e.g. 2026Jun19-222322-Rec00
+      ISO:     YYYY-MM-DD[_HH-MM-SS][-anything] e.g. 2026-06-19_22-23-22
+
+    Everything after the date/time prefix is ignored — the goal is just to
+    recover a date (and an optional time) for fuzzy pairing. Returns None
+    if neither prefix layout matches.
     """
-    if len(stem) < 9:
+    m = _match_date_prefix(stem)
+    if m is None:
         return None
-    year, mon_abbr, day = stem[:4], stem[4:7], stem[7:9]
-    if not year.isdigit() or not day.isdigit() or mon_abbr not in MONTH_ABBR:
-        return None
-    date_iso = f"{year}-{MONTH_ABBR[mon_abbr]}-{day}"
+
+    groups = m.groupdict()
+    if "mon" in groups and groups["mon"] is not None:
+        month_num = MONTH_ABBR.get(groups["mon"])
+        if month_num is None:
+            return None
+    else:
+        month_num = groups["m"]
+    date_iso = f"{groups['y']}-{month_num}-{groups['d']}"
 
     time_seconds = None
-    if len(stem) >= 16 and stem[9] == "-" and stem[10:16].isdigit():
-        hh, mm, ss = int(stem[10:12]), int(stem[12:14]), int(stem[14:16])
+    if groups.get("hh") is not None:
+        hh, mm, ss = int(groups["hh"]), int(groups["mm"]), int(groups["ss"])
         if 0 <= hh < 24 and 0 <= mm < 60 and 0 <= ss < 60:
             time_seconds = hh * 3600 + mm * 60 + ss
     return date_iso, time_seconds
@@ -91,14 +127,25 @@ def parse_recording_filename(stem: str):
 
 
 def wav_suffix_after_prefix(stem: str) -> str:
-    """Return the part of a WAV stem after the ``YYYYMonDD-HHMMSS-`` prefix.
+    """Return the part of a WAV stem after the date/time prefix.
 
-    e.g. ``2026Jun20-122844-Rec00`` -> ``Rec00``. Returns ``''`` if the stem
-    is exactly the prefix or doesn't match. Used to keep ``-RecNN`` style
+    HiDock:  ``2026Jun20-122844-Rec00`` -> ``Rec00``
+    ISO:     ``2026-06-19_22-23-22-Rec00`` -> ``Rec00``  (post-bridge legacy)
+    ISO:     ``2026-06-19_22-23-22`` -> ``''``           (bridge default)
+
+    Returns ``''`` if the stem doesn't carry a date/time prefix at all, or
+    if there's nothing past the prefix. Used to keep ``-RecNN`` style
     disambiguators when renaming a WAV to match its companion JSON's stem.
     """
-    if len(stem) >= 17 and stem[16] == '-':
-        return stem[17:]
+    m = _match_date_prefix(stem)
+    if m is None:
+        return ''
+    end = m.end()
+    # Accept either `-` or `_` as the separator between prefix and suffix;
+    # HiDock always uses `-`, ISO names mostly do too but a date-only ISO
+    # stem like `2026-06-19_meeting subject` uses `_` after the date.
+    if end < len(stem) and stem[end] in ('-', '_'):
+        return stem[end + 1:]
     return ''
 
 

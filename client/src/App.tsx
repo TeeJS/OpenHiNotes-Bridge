@@ -116,13 +116,41 @@ async function uploadBlob(
   });
 }
 
+// Recognize the date-prefix layouts that the WebUSB driver's parseFilenameDate
+// also accepts — if the device filename starts with one of these, we trust
+// rec.dateCreated and emit an ISO stem; otherwise we keep the original stem
+// so we never replace a meaningful name with a "now"-stamped guess.
+const DEVICE_DATE_PREFIX = new RegExp(
+  '^(?:' +
+    String.raw`\d{14}` +                                          // 20260619222322...
+    '|' +
+    String.raw`\d{4}[A-Za-z]{3}\d{1,2}-\d{6}` +                   // 2026Jun19-222322...
+    '|' +
+    String.raw`\d{4}[-_]?\d{2}[-_]?\d{2}[-_]\d{2}\d{2}(?:\d{2})?` + // HDA_20260619_222322 / 2026-06-19_2223...
+  ')',
+);
+
 function targetFilename(rec: AudioRecording): string {
-  // Server stores as .wav since the device's .hda raw PCM gets a WAV header
-  // wrapped onto it by deviceService.downloadFile. Strip any .hda extension
-  // and add .wav. If the source was already MPEG it gets .mp3.
-  // We don't actually know the format until download, but .wav is the safe
-  // default — the server is just a passthrough storage anyway and the
-  // browser-side blob carries the right MIME via the Blob type.
+  // Server stores as .wav since the device's raw PCM gets a WAV header
+  // wrapped onto it by deviceService.downloadFile. (If the source was MPEG
+  // the bytes are still MPEG inside; .wav is the safe pipeline-default
+  // extension. The Blob's own MIME type stays correct for inline playback.)
+  //
+  // Rename: prefer YYYY-MM-DD_HH-MM-SS.wav so files sort/pair cleanly with
+  // companion meeting JSONs downstream. The HiDock's per-session -RecNN
+  // counter is intentionally dropped — second-resolution timestamps are
+  // already collision-proof for human-cadence recording.
+  if (DEVICE_DATE_PREFIX.test(rec.fileName)) {
+    const d = rec.dateCreated;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const stamp =
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+      `_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+    return `${stamp}.wav`;
+  }
+  // Filename doesn't look like a HiDock-style date prefix — fall back to
+  // the original stem so we don't replace something meaningful with a
+  // wall-clock guess (parseFilenameDate returns `new Date()` on failure).
   const base = rec.fileName.replace(/\.(hda|wav|mp3|mpeg)$/i, '');
   return `${base}.wav`;
 }
