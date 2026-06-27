@@ -172,6 +172,8 @@ table.recordings th {
   position: sticky;
   top: 0;
 }
+table.recordings th.sortable { cursor: pointer; user-select: none; }
+table.recordings th.sortable:hover { color: var(--text); }
 table.recordings tr:hover td { background: var(--bg-row-hover); }
 table.recordings td.filename {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

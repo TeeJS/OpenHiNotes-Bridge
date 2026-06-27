@@ -272,6 +272,39 @@ export default function App() {
   const [confirmBulkDelete, setConfirmBulkDelete] = useState<boolean>(false);
   const [bulkServerBusy, setBulkServerBusy] = useState<boolean>(false);
 
+  // Sort the server file list by a column. Default: newest first.
+  const [serverSortKey, setServerSortKey] = useState<'name' | 'mtime' | 'size'>('mtime');
+  const [serverSortDir, setServerSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const toggleServerSort = useCallback((key: 'name' | 'mtime' | 'size') => {
+    setServerSortKey((prevKey) => {
+      if (prevKey === key) {
+        // Same column: flip direction.
+        setServerSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+        return prevKey;
+      }
+      // New column: name ascending (A→Z), date/size descending (newest/largest first).
+      setServerSortDir(key === 'name' ? 'asc' : 'desc');
+      return key;
+    });
+  }, []);
+
+  const sortedServerFiles = useMemo(() => {
+    const dir = serverSortDir === 'asc' ? 1 : -1;
+    return [...serverFiles].sort((a, b) => {
+      let cmp: number;
+      if (serverSortKey === 'name') {
+        cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      } else if (serverSortKey === 'size') {
+        cmp = a.size - b.size;
+      } else {
+        cmp = new Date(a.mtime).getTime() - new Date(b.mtime).getTime();
+      }
+      if (cmp === 0) cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      return cmp * dir;
+    });
+  }, [serverFiles, serverSortKey, serverSortDir]);
+
   const toggleSelectedServerFile = useCallback((name: string) => {
     setSelectedServerFiles((s) => {
       const next = new Set(s);
@@ -544,6 +577,41 @@ export default function App() {
     [recordings, selected],
   );
 
+  // Sort the device recordings by a column. Default: newest first.
+  const [deviceSortKey, setDeviceSortKey] = useState<'name' | 'date' | 'size' | 'duration'>('date');
+  const [deviceSortDir, setDeviceSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const toggleDeviceSort = useCallback((key: 'name' | 'date' | 'size' | 'duration') => {
+    setDeviceSortKey((prevKey) => {
+      if (prevKey === key) {
+        // Same column: flip direction.
+        setDeviceSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+        return prevKey;
+      }
+      // New column: name ascending (A→Z), date/size descending (newest/largest first).
+      setDeviceSortDir(key === 'name' ? 'asc' : 'desc');
+      return key;
+    });
+  }, []);
+
+  const sortedRecordings = useMemo(() => {
+    const dir = deviceSortDir === 'asc' ? 1 : -1;
+    return [...recordings].sort((a, b) => {
+      let cmp: number;
+      if (deviceSortKey === 'name') {
+        cmp = a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: 'base' });
+      } else if (deviceSortKey === 'size') {
+        cmp = a.size - b.size;
+      } else if (deviceSortKey === 'duration') {
+        cmp = a.duration - b.duration;
+      } else {
+        cmp = a.dateCreated.getTime() - b.dateCreated.getTime();
+      }
+      if (cmp === 0) cmp = a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: 'base' });
+      return cmp * dir;
+    });
+  }, [recordings, deviceSortKey, deviceSortDir]);
+
   const storageSummary = device?.storageInfo
     ? `${formatBytes(device.storageInfo.usedSpace)} / ${formatBytes(device.storageInfo.totalSpace)} used  ·  ${device.storageInfo.fileCount} files`
     : null;
@@ -648,16 +716,40 @@ export default function App() {
                         onChange={toggleSelectAll}
                       />
                     </th>
-                    <th>Filename</th>
-                    <th>Date</th>
-                    <th className="right">Size</th>
-                    <th className="right">Duration</th>
+                    <th
+                      className="sortable"
+                      onClick={() => toggleDeviceSort('name')}
+                      title="Sort by filename"
+                    >
+                      Filename{deviceSortKey === 'name' ? (deviceSortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
+                    <th
+                      className="sortable"
+                      onClick={() => toggleDeviceSort('date')}
+                      title="Sort by date"
+                    >
+                      Date{deviceSortKey === 'date' ? (deviceSortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
+                    <th
+                      className="right sortable"
+                      onClick={() => toggleDeviceSort('size')}
+                      title="Sort by size"
+                    >
+                      Size{deviceSortKey === 'size' ? (deviceSortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
+                    <th
+                      className="right sortable"
+                      onClick={() => toggleDeviceSort('duration')}
+                      title="Sort by duration"
+                    >
+                      Duration{deviceSortKey === 'duration' ? (deviceSortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
                     <th>Progress</th>
                     <th className="right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {recordings.map((rec) => {
+                  {sortedRecordings.map((rec) => {
                     const rs = rowState[rec.id] ?? {};
                     return (
                       <tr key={rec.id}>
@@ -851,14 +943,32 @@ export default function App() {
                       onChange={toggleSelectAllServerFiles}
                     />
                   </th>
-                  <th>Filename</th>
-                  <th>Modified</th>
-                  <th className="right">Size</th>
+                  <th
+                    className="sortable"
+                    onClick={() => toggleServerSort('name')}
+                    title="Sort by filename"
+                  >
+                    Filename{serverSortKey === 'name' ? (serverSortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                  </th>
+                  <th
+                    className="sortable"
+                    onClick={() => toggleServerSort('mtime')}
+                    title="Sort by modified date"
+                  >
+                    Modified{serverSortKey === 'mtime' ? (serverSortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                  </th>
+                  <th
+                    className="right sortable"
+                    onClick={() => toggleServerSort('size')}
+                    title="Sort by size"
+                  >
+                    Size{serverSortKey === 'size' ? (serverSortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                  </th>
                   <th className="right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {serverFiles.map((f) => {
+                {sortedServerFiles.map((f) => {
                   const fileUrl = `/api/files/${encodeURIComponent(f.name)}`;
                   const playable = isPlayableAudio(f.name);
                   const isPlaying = playingServerFile === f.name;
