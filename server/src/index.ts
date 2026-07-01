@@ -222,7 +222,7 @@ async function startServer(): Promise<void> {
     }
   });
 
-  app.post<{ Body?: { threshold?: number } }>('/api/process', async (req, reply) => {
+  app.post<{ Body?: { threshold?: number; files?: string[] } }>('/api/process', async (req, reply) => {
     if (!PROCESS_CMD) {
       return reply.code(412).send({
         error: 'HIDOCK_PROCESS_CMD is not configured. Set this env var to a shell command and restart.',
@@ -244,6 +244,41 @@ async function startServer(): Promise<void> {
         });
       }
       extraEnv.DIARIZER_THRESHOLD = String(t);
+    }
+
+    // Optional explicit work list. When present, the script processes only
+    // these files instead of every *.wav. Each name is validated with the same
+    // safety check as the download/delete endpoints, and must exist on disk, so
+    // nothing unsafe or bogus reaches the spawned shell command.
+    if (body.files !== undefined) {
+      if (!Array.isArray(body.files)) {
+        return reply.code(400).send({ error: 'files must be an array of filenames' });
+      }
+      const validated: string[] = [];
+      for (const raw of body.files) {
+        if (typeof raw !== 'string') {
+          return reply.code(400).send({ error: `each file must be a string (got ${typeof raw})` });
+        }
+        const safeName = path.basename(raw);
+        if (safeName !== raw || !isSafeFilename(safeName) || /[\r\n]/.test(safeName)) {
+          return reply.code(400).send({ error: `invalid filename: ${raw}` });
+        }
+        try {
+          const st = await fs.stat(path.join(STORAGE_PATH, safeName));
+          if (!st.isFile()) {
+            return reply.code(400).send({ error: `not a file: ${safeName}` });
+          }
+        } catch {
+          return reply.code(404).send({ error: `file not found: ${safeName}` });
+        }
+        validated.push(safeName);
+      }
+      // Empty list → leave HIDOCK_FILES unset so the script falls back to all
+      // files (the client disables the button at 0 selected, so this is just
+      // defensive).
+      if (validated.length > 0) {
+        extraEnv.HIDOCK_FILES = JSON.stringify(validated);
+      }
     }
 
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

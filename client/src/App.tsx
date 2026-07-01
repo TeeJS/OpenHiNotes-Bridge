@@ -531,12 +531,16 @@ export default function App() {
     }
   }, [recordings, selected, handlePushToServer, refreshRecordings]);
 
-  const handleRunProcess = useCallback(async () => {
+  // Shared POST /api/process. `files` omitted → server processes everything;
+  // a non-empty list → only those files.
+  const startProcess = useCallback(async (files?: string[]) => {
+    const payload: { threshold: number; files?: string[] } = { threshold: thresholdNum };
+    if (files && files.length > 0) payload.files = files;
     try {
       const r = await fetch('/api/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threshold: thresholdNum }),
+        body: JSON.stringify(payload),
       });
       const data = await r.json();
       if (!r.ok) {
@@ -556,6 +560,13 @@ export default function App() {
       });
     }
   }, [thresholdNum]);
+
+  const handleRunProcess = useCallback(() => startProcess(), [startProcess]);
+
+  const handleProcessSelectedServerFiles = useCallback(
+    () => startProcess(Array.from(selectedServerFiles)),
+    [startProcess, selectedServerFiles],
+  );
 
   const toggleSelected = useCallback((id: string) => {
     setSelected((s) => {
@@ -905,6 +916,23 @@ export default function App() {
             title="Download every selected file as a separate save dialog"
           >
             Download selected
+          </button>
+          <button
+            className="secondary"
+            onClick={handleProcessSelectedServerFiles}
+            disabled={
+              selectedServerFiles.size === 0 ||
+              bulkServerBusy ||
+              job?.status === 'running' ||
+              !serverConfig?.processConfigured
+            }
+            title={
+              !serverConfig?.processConfigured
+                ? 'HIDOCK_PROCESS_CMD is not set on the server'
+                : `Run server-side processing on just the ${selectedServerFiles.size} selected file(s)`
+            }
+          >
+            Process selected{selectedServerFiles.size > 0 ? ` (${selectedServerFiles.size})` : ''}
           </button>
           {confirmBulkDelete ? (
             <>

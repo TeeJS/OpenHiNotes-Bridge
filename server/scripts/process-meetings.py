@@ -31,6 +31,10 @@ DEFAULT_THRESHOLD = float(os.environ.get("DIARIZER_THRESHOLD", "0.35"))
 DEFAULT_CONTAINER = os.environ.get("MEETING_DIARIZER_CONTAINER", "meeting-diarizer")
 DEFAULT_READY_TIMEOUT = int(os.environ.get("DIARIZER_READY_TIMEOUT", "300"))
 DEFAULT_SKIP_POWER = os.environ.get("DIARIZER_SKIP_POWER_MGMT", "").lower() in ("1", "true", "yes")
+# Optional explicit work list. JSON array of filenames (relative to the input
+# dir), set by the bridge when the user clicks "Process selected". Unset/empty
+# means "process every *.wav", preserving the original all-files behavior.
+DEFAULT_FILES_RAW = os.environ.get("HIDOCK_FILES", "")
 
 TIMEOUT = 3600
 JSON_TIME_TOLERANCE_SECONDS = 7 * 60
@@ -49,6 +53,52 @@ def iso_stamp(dt: datetime, with_seconds: bool = True) -> str:
 
 def log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
+
+
+def parse_files_env(raw: str):
+    """Parse the optional HIDOCK_FILES env var: a JSON array of filenames.
+
+    Returns a list of names, or None if unset/empty/malformed. A malformed
+    value falls back to None (process all) rather than aborting, but logs a
+    warning so the misconfiguration is visible in the bridge UI.
+    """
+    if not raw or not raw.strip():
+        return None
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        log("WARNING: HIDOCK_FILES is not valid JSON — ignoring it and processing all files.")
+        return None
+    if not isinstance(data, list):
+        log("WARNING: HIDOCK_FILES is not a JSON array — ignoring it and processing all files.")
+        return None
+    names = [str(x).strip() for x in data if str(x).strip()]
+    return names or None
+
+
+def select_wav_files(names, input_dir: Path):
+    """Resolve a list of requested filenames to validated WAV paths in input_dir.
+
+    Each name is reduced to its basename (defense in depth — the bridge already
+    validates, but the script must never walk outside its input dir) and kept
+    only if it exists, is a regular file, and ends in .wav. Anything skipped is
+    logged so the omission is visible in the run output.
+    """
+    selected = []
+    for name in names:
+        base = os.path.basename(name)
+        if base != name or not base:
+            log(f"  Skipping requested file (unsafe or empty name): {name!r}")
+            continue
+        if not base.lower().endswith(".wav"):
+            log(f"  Skipping requested file (not a .wav): {base}")
+            continue
+        candidate = input_dir / base
+        if not candidate.is_file():
+            log(f"  Skipping requested file (not found in input dir): {base}")
+            continue
+        selected.append(candidate)
+    return sorted(selected)
 
 
 # HiDock-native stems:  2026Jun19-222322[-anything]   or   2026Jun19[-anything]
@@ -634,6 +684,10 @@ def main() -> None:
     parser.add_argument("--no-power-mgmt", action="store_true",
                         default=DEFAULT_SKIP_POWER,
                         help="Skip starting/stopping the diarizer container.")
+    parser.add_argument("--files", nargs="*", default=None,
+                        help="Process only these WAV filenames (basename, in the "
+                             "input dir) instead of every *.wav. Overrides the "
+                             "HIDOCK_FILES env var. Omit to process all.")
 
     args = parser.parse_args()
 
@@ -653,13 +707,22 @@ def main() -> None:
         log(f"Error: output directory does not exist: {output_dir}")
         sys.exit(1)
 
-    wav_files = sorted(p for p in input_dir.glob("*.wav") if p.is_file())
-
-    log(f"WAV files found: {len(wav_files)}")
-
-    if not wav_files:
-        log("No WAV files found.")
-        return
+    # An explicit work list (CLI --files, else the HIDOCK_FILES env var) means
+    # "process only these"; otherwise fall back to processing every *.wav.
+    requested = args.files if args.files is not None else parse_files_env(DEFAULT_FILES_RAW)
+    if requested is not None:
+        log(f"Explicit file list requested ({len(requested)}): {', '.join(requested)}")
+        wav_files = select_wav_files(requested, input_dir)
+        log(f"WAV files selected: {len(wav_files)} of {len(requested)} requested")
+        if not wav_files:
+            log("None of the requested files were usable WAVs. Nothing to do.")
+            return
+    else:
+        wav_files = sorted(p for p in input_dir.glob("*.wav") if p.is_file())
+        log(f"WAV files found: {len(wav_files)}")
+        if not wav_files:
+            log("No WAV files found.")
+            return
 
     run_started = datetime.now()
 
