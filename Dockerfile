@@ -27,7 +27,14 @@ WORKDIR /app
 # python3 runs server/scripts/process-meetings.py (the diarizer batch driver);
 # docker-cli lets that script start/stop the meeting-diarizer container via a
 # bind-mounted /var/run/docker.sock so the GPU is only loaded while a job runs.
-RUN apk add --no-cache python3 docker-cli
+# tzdata provides the zoneinfo db so timestamps use the local zone (below).
+RUN apk add --no-cache python3 docker-cli tzdata
+
+# Local timezone. Alpine/musl reads $TZ and /etc/localtime; installing tzdata
+# plus this symlink is the Alpine equivalent of the Debian tzdata reconfigure
+# (no dpkg-reconfigure/DEBIAN_FRONTEND on Alpine).
+ENV TZ=America/Denver
+RUN ln -fs /usr/share/zoneinfo/$TZ /etc/localtime
 
 ENV NODE_ENV=production
 ENV PORT=3000
