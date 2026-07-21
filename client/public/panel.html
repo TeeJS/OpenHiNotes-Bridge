@@ -10,13 +10,13 @@
     --bg-elev: #181b22;
     --bg-row: #1f232c;
     --bg-row-hover: #262b35;
+    --bg-console: #0a0d13;
     --border: #2a2f3a;
     --text: #e6e8ef;
     --text-dim: #99a0b3;
     --accent: #6aa9ff;
     --accent-hover: #87baff;
     --danger: #ff6a6a;
-    --danger-hover: #ff8585;
     --success: #5fd38d;
     --warn: #f0c674;
   }
@@ -46,126 +46,126 @@
   }
   button:active:not(:disabled) { background: var(--accent-hover); }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
-  button.secondary {
-    background: transparent;
-    color: var(--text);
-    border: 2px solid var(--border);
-  }
+  button.secondary { background: transparent; color: var(--text); border: 2px solid var(--border); }
   button.danger { background: var(--danger); color: #1a0505; }
+  button.small { height: 38px; padding: 0 14px; font-size: 13.5px; }
 
-  input[type="checkbox"] { width: 34px; height: 34px; accent-color: var(--accent); cursor: pointer; }
-  thead th:first-child, tbody td:first-child { padding: 10px 14px 10px 20px; }
+  input[type="checkbox"] { width: 30px; height: 30px; accent-color: var(--accent); cursor: pointer; }
   input[type="range"] { accent-color: var(--accent); height: 36px; cursor: pointer; }
 
-  /* ---- Top control strip (fixed, never scrolls) ---- */
+  /* ---- Top control strip: compact, controls only ---- */
   header {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
-    gap: 24px;
-    padding: 0 24px;
-    height: 108px;
+    gap: 20px;
+    padding: 0 20px;
+    height: 64px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-elev);
   }
-  .status-block { display: flex; flex-direction: column; gap: 4px; min-width: 220px; }
-  .status-label { font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
-  .status-value { font-size: 28px; font-weight: 700; line-height: 1.1; }
-  .status-value.idle { color: var(--text-dim); }
-  .status-value.running { color: var(--warn); }
-  .status-value.success { color: var(--success); }
-  .status-value.error { color: var(--danger); }
-
-  .threshold-block { display: flex; flex-direction: column; gap: 4px; flex: 0 0 260px; }
-  .threshold-block .row { display: flex; align-items: center; gap: 12px; }
+  .threshold-block { display: flex; align-items: center; gap: 10px; flex: 0 0 260px; font-size: 13px; color: var(--text-dim); }
   .threshold-block input[type="range"] { flex: 1; }
-  .threshold-block .val { font-size: 18px; font-weight: 600; min-width: 44px; text-align: right; }
-
+  .threshold-block .val { font-size: 15px; font-weight: 600; color: var(--text); min-width: 36px; }
   .spacer { flex: 1; }
 
-  .last-line {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 13px;
-    color: var(--text-dim);
-    max-width: 420px;
+  /* ---- Output console: the dominant, primary region ---- */
+  .console-wrap { flex: 1 1 auto; min-height: 0; padding: 14px 20px 10px; display: flex; flex-direction: column; }
+  .console {
+    flex: 1 1 auto;
+    min-height: 0;
+    background: var(--bg-console);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    transition: border-color 0.2s;
   }
+  .console.running { border-color: var(--warn); }
+  .console.success { border-color: var(--success); }
+  .console.error { border-color: var(--danger); }
 
-  /* ---- Files region (the only scrolling region) ---- */
-  main { flex: 1 1 auto; min-height: 0; padding: 16px 24px; display: flex; flex-direction: column; gap: 10px; }
-  .files-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; }
-  .files-toolbar .count { color: var(--text-dim); font-size: 14px; }
-
-  .table-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
-  table { width: 100%; border-collapse: collapse; font-size: 15px; }
-  thead th {
-    position: sticky; top: 0;
-    background: var(--bg-elev);
-    text-align: left;
-    color: var(--text-dim);
-    font-weight: 600;
-    font-size: 13px;
-    padding: 10px 14px;
+  .console-head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
     border-bottom: 1px solid var(--border);
+    font-size: 15px;
+    font-weight: 700;
   }
-  tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border); height: 52px; }
-  tbody tr:hover { background: var(--bg-row-hover); }
-  td.name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px; }
-  td.right { text-align: right; white-space: nowrap; }
-  td.actions { text-align: right; white-space: nowrap; }
-  td.actions button { margin-left: 8px; height: 40px; padding: 0 14px; font-size: 14px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--text-dim); flex: 0 0 auto; }
+  .console.running .dot { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
+  .console.success .dot { background: var(--success); }
+  .console.error .dot { background: var(--danger); }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .console-head .when { font-weight: 400; color: var(--text-dim); font-size: 13px; margin-left: auto; }
 
-  .empty { color: var(--text-dim); padding: 24px; text-align: center; }
+  .console-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px 16px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 16px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .console-body .stderr-line { color: var(--danger); }
+  .console-body.empty { color: var(--text-dim); font-family: inherit; font-size: 15px; display: flex; align-items: center; justify-content: center; height: 100%; }
+
+  /* ---- Files strip: compact, secondary ---- */
+  .files-wrap { flex: 0 0 auto; padding: 0 20px 14px; }
+  .files-toolbar { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; color: var(--text-dim); }
+  .files-scroll { max-height: 92px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  tbody td { padding: 5px 12px; border-bottom: 1px solid var(--border); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--bg-row-hover); }
+  td.name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  td.actions { text-align: right; white-space: nowrap; }
+  .empty-files { color: var(--text-dim); padding: 10px 12px; font-size: 13px; }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="status-block">
-    <div class="status-label">Processing</div>
-    <div class="status-value idle" id="statusValue">Idle</div>
-  </div>
-
   <div class="threshold-block">
-    <div class="status-label">Threshold <span class="val" id="thresholdVal">0.35</span></div>
-    <div class="row">
-      <input type="range" id="threshold" min="0.1" max="0.9" step="0.05" value="0.35">
-    </div>
+    Threshold <input type="range" id="threshold" min="0.1" max="0.9" step="0.05" value="0.35"><span class="val" id="thresholdVal">0.35</span>
   </div>
-
   <button id="runBtn">Run process</button>
-
   <div class="spacer"></div>
-  <div class="last-line" id="lastLine"></div>
+  <span id="selCount" style="color:var(--text-dim); font-size:13px;">0 selected</span>
+  <button class="secondary small" id="processSelectedBtn" disabled>Process selected</button>
 </header>
 
-<main>
+<div class="console-wrap">
+  <div class="console" id="console">
+    <div class="console-head">
+      <div class="dot" id="dot"></div>
+      <span id="statusText">Idle</span>
+      <span class="when" id="whenText"></span>
+    </div>
+    <div class="console-body empty" id="consoleBody">Nothing has run yet — press "Run process" to start.</div>
+  </div>
+</div>
+
+<div class="files-wrap">
   <div class="files-toolbar">
-    <input type="checkbox" id="selectAll">
-    <span class="count" id="selCount">0 selected</span>
+    <input type="checkbox" id="selectAll" style="width:20px;height:20px;">
+    <span>Files on server</span>
     <div class="spacer"></div>
-    <button class="secondary" id="processSelectedBtn" disabled>Process selected</button>
-    <button class="secondary" id="deleteSelectedBtn" disabled>Delete selected</button>
-    <button class="secondary" id="refreshBtn">Refresh</button>
+    <button class="secondary small" id="deleteSelectedBtn" disabled>Delete selected</button>
+    <button class="secondary small" id="refreshBtn">Refresh</button>
   </div>
-  <div class="table-scroll">
-    <table>
-      <thead>
-        <tr>
-          <th style="width:44px"></th>
-          <th>Filename</th>
-          <th class="right" style="width:110px">Size</th>
-          <th class="right" style="width:170px">Modified</th>
-          <th class="right" style="width:100px">Actions</th>
-        </tr>
-      </thead>
-      <tbody id="rows"></tbody>
-    </table>
-    <div class="empty" id="emptyMsg" style="display:none">No files yet.</div>
+  <div class="files-scroll">
+    <table><tbody id="rows"></tbody></table>
+    <div class="empty-files" id="emptyMsg" style="display:none">No files yet.</div>
   </div>
-</main>
+</div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -180,19 +180,16 @@ function formatBytes(n) {
   while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
   return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
-function formatModified(iso) {
-  const d = new Date(iso);
-  const pad = (x) => String(x).padStart(2, '0');
-  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 async function refreshFiles() {
-  const r = await fetch('/api/files');
-  const data = await r.json();
-  files = (data.files || []).sort((a, b) => (a.mtime < b.mtime ? 1 : -1));
-  for (const s of Array.from(selected)) {
-    if (!files.some((f) => f.name === s)) selected.delete(s);
-  }
+  try {
+    const r = await fetch('/api/files');
+    const data = await r.json();
+    files = (data.files || []).sort((a, b) => (a.mtime < b.mtime ? 1 : -1));
+    for (const s of Array.from(selected)) {
+      if (!files.some((f) => f.name === s)) selected.delete(s);
+    }
+  } catch { files = []; }
   renderFiles();
 }
 
@@ -203,11 +200,10 @@ function renderFiles() {
   for (const f of files) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="checkbox" data-name="${f.name}" ${selected.has(f.name) ? 'checked' : ''}></td>
+      <td style="width:34px"><input type="checkbox" style="width:20px;height:20px;" data-name="${f.name}" ${selected.has(f.name) ? 'checked' : ''}></td>
       <td class="name">${f.name}</td>
-      <td class="right">${formatBytes(f.size)}</td>
-      <td class="right">${formatModified(f.mtime)}</td>
-      <td class="actions"><button class="danger" data-del="${f.name}">Delete</button></td>
+      <td style="text-align:right; color:var(--text-dim); white-space:nowrap;">${formatBytes(f.size)}</td>
+      <td class="actions"><button class="secondary small" data-del="${f.name}">Delete</button></td>
     `;
     rows.appendChild(tr);
   }
@@ -231,7 +227,7 @@ function renderFiles() {
 
 function updateSelectionUI() {
   $('selCount').textContent = `${selected.size} selected`;
-  $('processSelectedBtn').disabled = selected.size === 0;
+  $('processSelectedBtn').disabled = selected.size === 0 || $('runBtn').disabled;
   $('deleteSelectedBtn').disabled = selected.size === 0;
   $('selectAll').checked = files.length > 0 && selected.size === files.length;
   $('selectAll').indeterminate = selected.size > 0 && selected.size < files.length;
@@ -258,16 +254,39 @@ $('threshold').addEventListener('input', () => {
   $('thresholdVal').textContent = $('threshold').value;
 });
 
-function setStatus(job) {
-  const el = $('statusValue');
-  const status = job?.status || 'idle';
-  el.textContent = status.charAt(0).toUpperCase() + status.slice(1);
-  el.className = `status-value ${status}`;
-  $('runBtn').disabled = status === 'running';
-  $('processSelectedBtn').disabled = status === 'running' || selected.size === 0;
+function renderConsole(job) {
+  const body = $('consoleBody');
+  const combined = [
+    ...(job?.stdout ? job.stdout.split('\n').map((l) => ({ l, err: false })) : []),
+    ...(job?.stderr ? job.stderr.split('\n').map((l) => ({ l, err: true })) : []),
+  ];
+  if (combined.length === 0) {
+    body.className = 'console-body empty';
+    body.textContent = 'Nothing has run yet — press "Run process" to start.';
+    return;
+  }
+  body.className = 'console-body';
+  body.innerHTML = combined
+    .map(({ l, err }) => `<div${err ? ' class="stderr-line"' : ''}>${l.replace(/</g, '&lt;')}</div>`)
+    .join('');
+  body.scrollTop = body.scrollHeight;
+}
 
-  const out = (job?.stderr || job?.stdout || '').trim().split('\n').pop() || '';
-  $('lastLine').textContent = out;
+function setStatus(job) {
+  const status = job?.status || 'idle';
+  const consoleEl = $('console');
+  consoleEl.className = `console ${status}`;
+  $('statusText').textContent = status.charAt(0).toUpperCase() + status.slice(1) +
+    (status === 'error' && job?.exitCode != null ? ` (exit ${job.exitCode})` : '');
+
+  let when = '';
+  if (job?.startedAt) when += `started ${new Date(job.startedAt).toLocaleTimeString()}`;
+  if (job?.completedAt) when += (when ? ' · ' : '') + `finished ${new Date(job.completedAt).toLocaleTimeString()}`;
+  $('whenText').textContent = when;
+
+  $('runBtn').disabled = status === 'running';
+  updateSelectionUI();
+  renderConsole(job);
 
   if (status === 'running') {
     if (!jobPoll) jobPoll = setInterval(pollStatus, 1000);
