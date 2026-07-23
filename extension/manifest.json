@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "OpenHiNotes P1 Sync",
+  "version": "1.0.0",
+  "description": "One click: copy everything off the HiDock P1 to the OpenHiNotes server (verify, then delete), and hand the P1 back to HiNotes.",
+  "permissions": ["tabs", "alarms", "storage"],
+  "host_permissions": ["https://notes.schmitzplex.com/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Sync P1 now" }
+}
