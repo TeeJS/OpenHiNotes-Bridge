@@ -135,6 +135,38 @@
   td.name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 21px; }
   td.actions { text-align: right; white-space: nowrap; }
   .empty-files { color: var(--text-dim); padding: 20px; font-size: 21px; text-align: center; }
+
+  /* ---- Touch-friendly confirmation modal (replaces window.confirm) ---- */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .modal {
+    background: var(--bg-elev);
+    border: 2px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    max-width: 82vw;
+    min-width: 420px;
+  }
+  .modal-msg {
+    font-size: 26px;
+    line-height: 1.4;
+    margin-bottom: 28px;
+    word-break: break-word;
+  }
+  .modal-actions { display: flex; gap: 18px; }
+  .modal-actions button {
+    flex: 1 1 50%;
+    height: 76px;
+    font-size: 26px;
+    border-radius: 14px;
+  }
 </style>
 </head>
 <body>
@@ -176,11 +208,40 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modalOverlay" style="display:none">
+  <div class="modal">
+    <div class="modal-msg" id="modalMsg"></div>
+    <div class="modal-actions">
+      <button class="secondary" id="modalCancel">Cancel</button>
+      <button class="danger" id="modalOk">Delete</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const selected = new Set();
 let files = [];
 let jobPoll = null;
+
+// Touch-friendly replacement for window.confirm — big in-page buttons
+// instead of the tiny native dialog. Resolves true on confirm.
+let modalResolve = null;
+function showConfirm(message, okLabel = 'Delete') {
+  $('modalMsg').textContent = message;
+  $('modalOk').textContent = okLabel;
+  $('modalOverlay').style.display = 'flex';
+  return new Promise((resolve) => { modalResolve = resolve; });
+}
+function closeModal(result) {
+  $('modalOverlay').style.display = 'none';
+  if (modalResolve) { modalResolve(result); modalResolve = null; }
+}
+$('modalOk').addEventListener('click', () => closeModal(true));
+$('modalCancel').addEventListener('click', () => closeModal(false));
+$('modalOverlay').addEventListener('click', (e) => {
+  if (e.target === $('modalOverlay')) closeModal(false);
+});
 
 function formatBytes(n) {
   if (!n) return '0 B';
@@ -225,7 +286,7 @@ function renderFiles() {
   });
   rows.querySelectorAll('button[data-del]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      if (!confirm(`Delete ${btn.dataset.del}?`)) return;
+      if (!(await showConfirm(`Delete ${btn.dataset.del}?`))) return;
       await fetch(`/api/files/${encodeURIComponent(btn.dataset.del)}`, { method: 'DELETE' });
       selected.delete(btn.dataset.del);
       refreshFiles();
@@ -249,7 +310,7 @@ $('selectAll').addEventListener('change', () => {
 });
 
 $('deleteSelectedBtn').addEventListener('click', async () => {
-  if (!confirm(`Delete ${selected.size} file(s)?`)) return;
+  if (!(await showConfirm(`Delete ${selected.size} file(s)?`))) return;
   for (const name of Array.from(selected)) {
     await fetch(`/api/files/${encodeURIComponent(name)}`, { method: 'DELETE' });
   }
