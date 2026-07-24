@@ -12,9 +12,3 @@ coverage/
 .parcel-cache/
 __pycache__/
 *.pyc
-
-# local icon assets
-icons/
-
-# local dev storage (README sanity-check runs)
-_data/

@@ -135,45 +135,12 @@
   td.name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 21px; }
   td.actions { text-align: right; white-space: nowrap; }
   .empty-files { color: var(--text-dim); padding: 20px; font-size: 21px; text-align: center; }
-
-  /* ---- Touch-friendly confirmation modal (replaces window.confirm) ---- */
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.65);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-  }
-  .modal {
-    background: var(--bg-elev);
-    border: 2px solid var(--border);
-    border-radius: 16px;
-    padding: 28px;
-    max-width: 82vw;
-    min-width: 420px;
-  }
-  .modal-msg {
-    font-size: 26px;
-    line-height: 1.4;
-    margin-bottom: 28px;
-    word-break: break-word;
-  }
-  .modal-actions { display: flex; gap: 18px; }
-  .modal-actions button {
-    flex: 1 1 50%;
-    height: 76px;
-    font-size: 26px;
-    border-radius: 14px;
-  }
 </style>
 </head>
 <body>
 
 <div class="col col-left">
   <div class="col-header">
-    <button class="secondary" id="syncBtn" title="Ask the meeting PC to copy everything off the P1 to the server, then hand the P1 back to HiNotes">Sync P1</button>
     <div class="threshold-block">
       Threshold <input type="range" id="threshold" min="0.1" max="0.9" step="0.05" value="0.35"><span class="val" id="thresholdVal">0.35</span>
     </div>
@@ -209,40 +176,11 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="modalOverlay" style="display:none">
-  <div class="modal">
-    <div class="modal-msg" id="modalMsg"></div>
-    <div class="modal-actions">
-      <button class="secondary" id="modalCancel">Cancel</button>
-      <button class="danger" id="modalOk">Delete</button>
-    </div>
-  </div>
-</div>
-
 <script>
 const $ = (id) => document.getElementById(id);
 const selected = new Set();
 let files = [];
 let jobPoll = null;
-
-// Touch-friendly replacement for window.confirm — big in-page buttons
-// instead of the tiny native dialog. Resolves true on confirm.
-let modalResolve = null;
-function showConfirm(message, okLabel = 'Delete') {
-  $('modalMsg').textContent = message;
-  $('modalOk').textContent = okLabel;
-  $('modalOverlay').style.display = 'flex';
-  return new Promise((resolve) => { modalResolve = resolve; });
-}
-function closeModal(result) {
-  $('modalOverlay').style.display = 'none';
-  if (modalResolve) { modalResolve(result); modalResolve = null; }
-}
-$('modalOk').addEventListener('click', () => closeModal(true));
-$('modalCancel').addEventListener('click', () => closeModal(false));
-$('modalOverlay').addEventListener('click', (e) => {
-  if (e.target === $('modalOverlay')) closeModal(false);
-});
 
 function formatBytes(n) {
   if (!n) return '0 B';
@@ -287,7 +225,7 @@ function renderFiles() {
   });
   rows.querySelectorAll('button[data-del]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      if (!(await showConfirm(`Delete ${btn.dataset.del}?`))) return;
+      if (!confirm(`Delete ${btn.dataset.del}?`)) return;
       await fetch(`/api/files/${encodeURIComponent(btn.dataset.del)}`, { method: 'DELETE' });
       selected.delete(btn.dataset.del);
       refreshFiles();
@@ -311,27 +249,12 @@ $('selectAll').addEventListener('change', () => {
 });
 
 $('deleteSelectedBtn').addEventListener('click', async () => {
-  if (!(await showConfirm(`Delete ${selected.size} file(s)?`))) return;
+  if (!confirm(`Delete ${selected.size} file(s)?`)) return;
   for (const name of Array.from(selected)) {
     await fetch(`/api/files/${encodeURIComponent(name)}`, { method: 'DELETE' });
   }
   selected.clear();
   refreshFiles();
-});
-
-// "Sync P1" — raise the sync-request flag; the extension on the meeting PC
-// polls /api/sync-request (~30 s) and runs the copy-verify-delete flow.
-$('syncBtn').addEventListener('click', async () => {
-  const btn = $('syncBtn');
-  btn.disabled = true;
-  try {
-    const r = await fetch('/api/sync-request', { method: 'POST' });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    btn.textContent = 'Sync requested ✓';
-  } catch {
-    btn.textContent = 'Request failed';
-  }
-  setTimeout(() => { btn.textContent = 'Sync P1'; btn.disabled = false; }, 30000);
 });
 
 $('refreshBtn').addEventListener('click', refreshFiles);

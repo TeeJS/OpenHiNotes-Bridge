@@ -97,26 +97,9 @@ requires a secure context.
 | `GET` | `/api/config` | client bootstrap config |
 | `GET` | `/api/files` | files currently in `$HIDOCK_STORAGE_PATH` |
 | `POST` | `/api/upload` | multipart upload (field name `file`), filename stays as-sent |
-| `GET` | `/api/files/:name/hash` | size + SHA-256 of a stored file (sync verification) |
 | `DELETE` | `/api/files/:name` | remove a file from the server share |
 | `POST` | `/api/process` | spawn `HIDOCK_PROCESS_CMD` (one at a time) |
 | `GET` | `/api/status` | state of the last/current process job |
-| `POST` | `/api/sync-request` | raise the "please sync the P1" flag (panel button) |
-| `GET` | `/api/sync-request` | is a sync request pending? (10-min expiry) |
-| `DELETE` | `/api/sync-request` | claim/clear the pending request (extension) |
-
-## One-button P1 sync
-
-`/sync` is an unattended page that connects to the P1, then for each
-recording: download → upload → **verify size + SHA-256 server-side** →
-only then delete from the device. Failures leave the file on the device.
-`/sync?auto=1` starts on load (used by the extension); a plain visit shows
-a Start button.
-
-The [extension/](extension/README.md) folder holds a Chrome MV3 extension
-for the meeting PC: one click (or the panel's **Sync P1** button, via
-`/api/sync-request`) closes HiNotes, runs `/sync?auto=1`, and always
-restores HiNotes afterwards so the P1 goes back to meeting duty.
 
 ## Project layout
 

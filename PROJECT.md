@@ -106,44 +106,6 @@ Manual verification against a real HiDock P1:
                       browser  --[ WebUSB ]-->  HiDock P1
 ```
 
-## Phase 2 — One-button P1 sync (approved 2026-07-23)
-
-**Goal:** press one button and have everything on the P1 copied to the server
-share and deleted from the device — then hand the P1 back to HiNotes
-automatically so meeting audio (incl. the P1↔earbud Bluetooth link) resumes
-without the user remembering anything.
-
-Non-negotiable criteria (user-stated):
-
-1. **Data integrity is #1.** A file may be deleted from the P1 only after its
-   copy on the server has been verified byte-for-byte (size + SHA-256, hashed
-   server-side from disk). Any error at any step = no delete, file flagged,
-   nothing lost. If this cannot be guaranteed, manual tab-switching wins.
-2. **HiNotes must come back ≥99% of the time.** The browser extension restores
-   the HiNotes tab unconditionally (success, failure, or hang — watchdog), so
-   auto-record of meetings resumes. If this bar can't be met, manual wins.
-3. Nice-to-have: trigger the sync from `/panel.html` (touch panel, different
-   machine) — implemented via a server-side sync-request flag the extension
-   polls.
-
-Components:
-
-- `/sync` page in the SPA — auto-connects, per-file download → upload →
-  hash-verify → delete, reports status via `document.title`
-  (`SYNC-RUNNING` / `SYNC-DONE` / `SYNC-FAILED` / `SYNC-NEEDS-ATTENTION`).
-- Server: `GET /api/files/:name/hash` (size + SHA-256), and
-  `POST|GET|DELETE /api/sync-request` (panel-button trigger, 10-min expiry).
-- `extension/` — Chrome MV3 extension on the meeting PC: closes HiNotes
-  tab(s) (and any connected OpenHiNotes SPA tab), opens `/sync?auto=1`,
-  waits for the title verdict, then **always** closes the sync tab and
-  reopens HiNotes. State persisted in `chrome.storage.session` so even a
-  service-worker restart still restores HiNotes.
-- `panel.html`: native `confirm()` dialogs replaced with a large
-  touch-friendly in-page modal; "Sync P1" button posts a sync request.
-
-Explicitly dropped for now: any change to the NPMPlus login behaviour
-(needs more discussion).
-
 ## Salvaged from upstream
 
 - `frontend/src/services/deviceService.ts` — entire HiDock USB protocol.

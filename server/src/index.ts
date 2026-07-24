@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -206,32 +205,6 @@ async function startServer(): Promise<void> {
     },
   );
 
-  // Size + SHA-256 of a stored file, hashed from disk. The /sync page uses
-  // this to prove a pushed copy is byte-identical before deleting the
-  // original from the device (data-integrity criterion #1 in PROJECT.md).
-  app.get<{ Params: { name: string } }>('/api/files/:name/hash', async (req, reply) => {
-    const safeName = path.basename(req.params.name);
-    if (!isSafeFilename(safeName)) {
-      return reply.code(400).send({ error: 'invalid filename' });
-    }
-    const target = path.join(STORAGE_PATH, safeName);
-    let stat;
-    try {
-      stat = await fs.stat(target);
-    } catch (err) {
-      const e = err as NodeJS.ErrnoException;
-      if (e.code === 'ENOENT') return reply.code(404).send({ error: 'not found' });
-      throw err;
-    }
-    if (!stat.isFile()) return reply.code(404).send({ error: 'not a file' });
-
-    const hash = createHash('sha256');
-    for await (const chunk of createReadStream(target)) {
-      hash.update(chunk as Buffer);
-    }
-    return { name: safeName, size: stat.size, sha256: hash.digest('hex') };
-  });
-
   app.delete<{ Params: { name: string } }>('/api/files/:name', async (req, reply) => {
     const safeName = path.basename(req.params.name);
     if (!isSafeFilename(safeName)) {
@@ -354,40 +327,6 @@ async function startServer(): Promise<void> {
   });
 
   app.get('/api/status', async () => ({ job: jobView() }));
-
-  // ---- Sync request (panel → extension handoff) ----
-  // The touch panel can't reach the meeting PC directly, so the "Sync P1"
-  // button just raises a flag here; the browser extension on the meeting PC
-  // polls it every ~30 s, claims it with DELETE, and starts the sync.
-  // Requests expire after 10 minutes so a press made while the meeting PC is
-  // off doesn't fire a surprise sync hours later.
-  const SYNC_REQUEST_TTL_MS = 10 * 60 * 1000;
-  let syncRequestedAt: number | null = null;
-
-  const syncRequestView = () => {
-    if (syncRequestedAt !== null && Date.now() - syncRequestedAt > SYNC_REQUEST_TTL_MS) {
-      syncRequestedAt = null; // expired
-    }
-    return {
-      pending: syncRequestedAt !== null,
-      requestedAt: syncRequestedAt === null ? null : new Date(syncRequestedAt).toISOString(),
-    };
-  };
-
-  app.post('/api/sync-request', async () => {
-    syncRequestedAt = Date.now();
-    app.log.info('sync requested');
-    return { ok: true, ...syncRequestView() };
-  });
-
-  app.get('/api/sync-request', async () => syncRequestView());
-
-  app.delete('/api/sync-request', async () => {
-    const claimed = syncRequestView().pending;
-    syncRequestedAt = null;
-    if (claimed) app.log.info('sync request claimed');
-    return { ok: true, claimed };
-  });
 
   app.setNotFoundHandler(async (req, reply) => {
     // SPA fallback: serve index.html for any non-/api/* GET that isn't an asset
