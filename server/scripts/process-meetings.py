@@ -27,7 +27,7 @@ from urllib.parse import urlsplit, urlunsplit
 DEFAULT_URL = os.environ.get("DIARIZER_URL", "http://192.168.1.25:10301/transcribe")
 DEFAULT_INPUT_DIR = os.environ.get("HIDOCK_STORAGE_PATH", "/data")
 DEFAULT_OUTPUT_DIR = os.environ.get("DIARIZER_OUTPUT_DIR", "/output")
-DEFAULT_THRESHOLD = float(os.environ.get("DIARIZER_THRESHOLD", "0.35"))
+DEFAULT_THRESHOLD = float(os.environ.get("DIARIZER_THRESHOLD", "0.75"))
 DEFAULT_CONTAINER = os.environ.get("MEETING_DIARIZER_CONTAINER", "meeting-diarizer")
 DEFAULT_READY_TIMEOUT = int(os.environ.get("DIARIZER_READY_TIMEOUT", "300"))
 DEFAULT_SKIP_POWER = os.environ.get("DIARIZER_SKIP_POWER_MGMT", "").lower() in ("1", "true", "yes")

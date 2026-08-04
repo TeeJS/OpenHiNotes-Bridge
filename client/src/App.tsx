@@ -68,7 +68,14 @@ function formatDate(d: Date): string {
 
 const AUTO_DELETE_KEY = 'openhinotes_bridge_auto_delete';
 const THRESHOLD_KEY = 'openhinotes_bridge_threshold';
-const THRESHOLD_DEFAULT = 0.35;
+const THRESHOLD_DEFAULT = 0.75;
+// Superseded defaults. Every speaker profile was rebuilt from current-hardware
+// audio, so genuine matches now score 0.76-0.99 where they used to run
+// 0.50-0.75. At the old cutoffs an unenrolled attendee could out-score the bar
+// against a colleague's voice and have their speech published under that
+// colleague's name. A browser still holding one of these picks up the new
+// default once; any other saved value is a deliberate choice and is left alone.
+const THRESHOLD_SUPERSEDED = ['0.35', '0.45'];
 const THRESHOLD_MIN = 0.1;
 const THRESHOLD_MAX = 0.9;
 const THEME_KEY = 'openhinotes_bridge_theme';
@@ -184,7 +191,10 @@ export default function App() {
   const [threshold, setThresholdState] = useState<string>(() => {
     if (typeof localStorage === 'undefined') return String(THRESHOLD_DEFAULT);
     const saved = localStorage.getItem(THRESHOLD_KEY);
-    return saved ?? String(THRESHOLD_DEFAULT);
+    if (saved === null || THRESHOLD_SUPERSEDED.includes(saved)) {
+      return String(THRESHOLD_DEFAULT);
+    }
+    return saved;
   });
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const jobPollRef = useRef<number | null>(null);

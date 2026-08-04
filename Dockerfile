@@ -43,7 +43,7 @@ ENV HIDOCK_STORAGE_PATH=/data
 ENV HIDOCK_PROCESS_CMD="python3 /app/scripts/process-meetings.py"
 ENV DIARIZER_URL="http://192.168.1.25:10301/transcribe"
 ENV DIARIZER_OUTPUT_DIR=/output
-ENV DIARIZER_THRESHOLD=0.35
+ENV DIARIZER_THRESHOLD=0.75
 ENV MEETING_DIARIZER_CONTAINER=meeting-diarizer
 
 # Bring built artifacts and pruned node_modules
